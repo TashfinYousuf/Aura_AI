@@ -1,6 +1,13 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  /* config options here */
+  async rewrites() {
+    return [
+      {
+        source: '/static/:path*',
+        destination: 'http://localhost:8000/static/:path*', // Live এ থাকলে Render backend URL
+      },
+    ];
+  },
 };
 
 module.exports = nextConfig;

@@ -63,7 +63,7 @@ export default function GoalTracker({ currentUser }: { currentUser: User }) {
             {/* Progress Bar */}
             <div className="w-full h-1.5 bg-gray-800 rounded-full mb-5 overflow-hidden">
               <div 
-                className="h-full bg-gradient-to-r from-indigo-500 to-purple-500 transition-all duration-700"
+                className="h-full bg-linear-to-r from-indigo-500 to-purple-500 transition-all duration-700"
                 style={{ width: `${goal.progress}%` }}
               />
             </div>

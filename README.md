@@ -1,2 +1,2 @@
 # AI_Companion
-# AI_Companion
+# AURA_Companion

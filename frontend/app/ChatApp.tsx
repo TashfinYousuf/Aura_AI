@@ -157,11 +157,6 @@ export default function ChatApp({ currentUser }: { currentUser: User }) {
       })
       .catch(err => console.error("History fetch error:", err));
 
-    // খ) নোটিফিকেশন পারমিশন
-    if ("Notification" in window && Notification.permission === "default") {
-      Notification.requestPermission();
-    }
-
     const connectWebSocket = () => {
       // ☢️ PRO-TRICK: ব্রাউজার যে IP তে চলবে, ওয়েবসকেট অটোমেটিক সেই IP ধরে নেবে
       const currentHost = window.location.hostname;
@@ -187,45 +182,32 @@ export default function ChatApp({ currentUser }: { currentUser: User }) {
     socket.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data);
-          if (data.type === "reply") {
-            setMessages(prev => [...prev, { 
-              id: Date.now().toString(),
-              role: 'ai', 
-              content: data.content,
-              audioBase64: data.audio_base64,
-              isVoiceNote: data.is_voice_note,
-              imageUrl: data.image_url,
-              videoUrl: data.video_url,
-            }]);
-            setIsLoading(false);
+          // 🛠️ লোকাল ইমেজ হলে API_BASE (FastAPI এর পোর্ট) যুক্ত করে দেবে
+          const finalImageUrl = data.image_url?.startsWith('/') ? `${API_BASE}${data.image_url}` : data.image_url;
 
-            // 💾 Save AI Message to Permanent DB
-            fetch(`${API_BASE}/api/chat/save`, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                user_id: currentUser.uid,
+          if (data.type === "reply") {
+            setMessages((prev) => [
+              ...prev,
+              {
+                id: data.id || Date.now().toString(),
                 role: "ai",
                 content: data.content,
-                image_url: null
-              })
-            });
+                audioBase64: data.audio_base64,
+                isVoiceNote: data.is_voice_note,
+                imageUrl: finalImageUrl,
+                videoUrl: data.video_url,
+              },
+            ]);
+            setIsLoading(false);
 
             // মেসেজ আসার সাথে সাথে বিপ সাউন্ড প্লে হবে
-            if (typeof playSweetBeep === "function") {
-              playSweetBeep(); 
-            }
-          }
+            if (typeof playSweetBeep === "function") playSweetBeep();
 
-          // 🔔 PUSH NOTIFICATION (যদি ইউজার অন্য ট্যাবে থাকে)
-          if (document.hidden && "Notification" in window && Notification.permission === "granted") {
-            new Notification("Aura 💜", {
-              body: data.content,
-              icon: data.image_url || "/default-avatar.png",
-            });
+            // 🔔 Trigger Native OS Banner
+            triggerAuraNotification("Aura 💜", data.content);
           }
         } catch (err) {
-          console.error("Parse error:", err);
+          console.error("Socket message error:", err);
         }
       };
 
@@ -250,15 +232,6 @@ export default function ChatApp({ currentUser }: { currentUser: User }) {
   // ==========================================
   // ৭. ইউটিলিটি: ইমেজ টু Base64
   // ==========================================
-  const convertToBase64 = (file: File): Promise<string> => {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.readAsDataURL(file);
-      reader.onload = () => resolve((reader.result as string).split(",")[1]);
-      reader.onerror = (error) => reject(error);
-    });
-  };
-
   const submitEdit = (idx: number, newContent: string) => {
     const msgId = messages[idx].id;
 
@@ -281,29 +254,65 @@ export default function ChatApp({ currentUser }: { currentUser: User }) {
     }
   };
   
-  // ===========================================================
-  // ৮. টেক্সট ও ইমেজ সেন্ড (Old API Removed, Now fully WebSocket)
-  // ===========================================================
- const handleTextSend = async (e?: React.FormEvent) => {
-    e?.preventDefault();
-    if (!input.trim()) return;
+  // Helper: File to clean Base64 string
+  const convertToBase64 = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.readAsDataURL(file);
+      reader.onload = () => {
+        const result = reader.result as string;
+        const base64Data = result.split(",")[1]; // Strips the data:*/*;base64, header
+        resolve(base64Data);
+      };
+      reader.onerror = (error) => reject(error);
+    });
+  };
 
-    const userText = input.trim();
+  // 1. UPDATED: handleTextSend with local image preview in user chat bubble
+  const handleTextSend = async (e?: React.FormEvent) => {
+    e?.preventDefault();
+    if (!input.trim() && !selectedImage) return;
+
+    const userText = input.trim() || "📸 Sent an image";
+    let base64Image: string | null = null;
+    let localPreviewUrl: string | null = null;
+
+    if (selectedImage) {
+      try {
+        base64Image = await convertToBase64(selectedImage);
+        // Create instant local URL for the user to see their own sent image
+        localPreviewUrl = URL.createObjectURL(selectedImage);
+      } catch (err) {
+        console.error("Failed to process image:", err);
+      }
+    }
+
+    // Instant UI update for the user's bubble
+    const uniqueUserId = Date.now().toString() + "-user";
+    setMessages((prev) => [
+      ...prev,
+      { 
+        id: uniqueUserId, 
+        role: "user", 
+        content: userText,
+        imageUrl: localPreviewUrl || undefined // 👈 Shows the attached image in chat
+      }
+    ]);
+
     setInput("");
+    setSelectedImage(null);
     setIsLoading(true);
 
-    const uniqueUserId = Date.now().toString() + "-user";
-    setMessages((prev) => [...prev, { id: uniqueUserId, role: "user", content: userText }]);
-
-    // 🛑 Database save backend (WebSocket) নিজেই করে নেবে, তাই এখানকার fetch('/save') মুছে দেওয়া হলো
-
     if (ws.current && ws.current.readyState === WebSocket.OPEN) {
-      // 💡 "incognito: isIncognito" পাঠানোটা বাধ্যতামূলক, নাহলে ব্যাকএন্ড কনফিউজড হয়
       ws.current.send(JSON.stringify({ 
         type: "text", 
         content: userText,
+        image_base64: base64Image,
         incognito: isIncognito
       }));
+    } else {
+      console.error("WebSocket disconnected!");
+      setIsLoading(false);
     }
   };
 
@@ -409,6 +418,46 @@ export default function ChatApp({ currentUser }: { currentUser: User }) {
       }));
     }
   };
+
+  const resolveImageUrl = (url?: string | null) => {
+    if (!url) return "";
+    if (url.startsWith("http://") || url.startsWith("https://") || url.startsWith("data:")) {
+      return url;
+    }
+    // Ensure local relative URLs always hit FastAPI backend
+    return `${API_BASE}${url.startsWith("/") ? "" : "/"}${url}`;
+  };
+
+  // Helper: Triggers native OS notification banner via Service Worker
+  const triggerAuraNotification = async (title: string, body: string) => {
+    if (typeof window === "undefined" || !("Notification" in window)) return;
+
+    if (Notification.permission === "granted") {
+      // 1. Prefer Service Worker notification (Guaranteed macOS Banner)
+      if ("serviceWorker" in navigator) {
+        try {
+          const reg = await navigator.serviceWorker.ready;
+          reg.showNotification(title, {
+            body: body,
+            icon: "https://placehold.co/192x192/8b5cf6/ffffff?text=Aura",
+            badge: "https://placehold.co/192x192/8b5cf6/ffffff?text=Aura",
+            tag: "aura-message", // Prevents spamming, replaces old banner cleanly
+            renotify: true,
+            silent: false,
+          } as any );
+          return;
+        } catch (err) {
+          console.warn("SW notification failed, trying fallback:", err);
+        }
+      }
+
+      // 2. Fallback to standard window Notification
+      new Notification(title, {
+        body: body,
+        icon: "https://placehold.co/192x192/8b5cf6/ffffff?text=Aura",
+      });
+    }
+  };
   
   return (
     <div className="flex flex-col h-dvh w-full bg-gray-950 overflow-hidden">
@@ -417,7 +466,7 @@ export default function ChatApp({ currentUser }: { currentUser: User }) {
         {/* Top Row for Mobile (Title + Level) */}
         <div className="flex justify-between items-center w-full sm:w-auto">
           <h1 className="text-lg sm:text-xl font-bold text-transparent bg-clip-text bg-linear-to-r from-indigo-400 to-purple-400">
-            Aura Companion OS
+            Aura
           </h1>
           <div className="flex items-center gap-2 sm:ml-4">
             <span className="text-[10px] sm:text-xs px-2 py-0.5 bg-indigo-500/20 text-indigo-300 rounded border border-indigo-500/30 whitespace-nowrap">
@@ -518,32 +567,43 @@ export default function ChatApp({ currentUser }: { currentUser: User }) {
               
               {/* MESSENGER STYLE RESIZED IMAGE WITH CLICK-TO-ZOOM */}
               {msg.imageUrl && (
-                <div className="relative group overflow-hidden rounded-xl w-48 md:w-56 cursor-pointer shadow-md border border-gray-700/50 hover:opacity-85 transition-opacity" onClick={() => setViewingImage(msg.imageUrl!)}>
+                <div 
+                  className="relative group overflow-hidden rounded-xl w-48 md:w-56 cursor-pointer shadow-md border border-gray-700/50 hover:opacity-85 transition-opacity mt-2" 
+                  onClick={() => setViewingImage(msg.imageUrl!)}
+                >
                   <img 
-                    src={msg.imageUrl} 
-                    alt="AI Selfie" 
-                    referrerPolicy="no-referrer" // 👈 এটা ব্রাউজারকে ছবি ব্লক করা থেকে আটকায়
-                    className="w-full h-auto object-cover" 
-                    onError={(e) => (e.target as HTMLImageElement).parentElement!.style.display = 'none'} 
+                    src={resolveImageUrl(msg.imageUrl)} 
+                    alt="Aura Selfie" 
+                    referrerPolicy="no-referrer"
+                    className="w-full h-auto object-cover max-h-72"
+                    onError={(e) => {
+                      const target = e.target as HTMLImageElement;
+                      target.src = "https://placehold.co/512x512/1e1e2f/ffffff?text=Image+Generating...";
+                      target.onerror = null;
+                    }}
                   />
-                  {/* ছোট একটা জুম আইকন হোভার করলে দেখাবে */}
-                  <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-black/30">
-                    <span className="text-white text-2xl">🔍</span>
+                  <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-black/40">
+                    <span className="text-white text-xl">🔍 View</span>
                   </div>
                 </div>
               )}
 
-              {/* 🎬 VIDEO PLAYER */}
+              {/* Talking Avatar / Video Player */}
               {msg.videoUrl && (
-                <div className="relative group overflow-hidden rounded-xl w-56 md:w-64 shadow-md border border-gray-700/50">
-                  <video 
-                    src={msg.videoUrl} 
-                    autoPlay 
-                    loop 
-                    muted 
+                <div className="relative overflow-hidden rounded-2xl w-56 md:w-64 mt-2 border border-purple-500/30 shadow-lg bg-black/40">
+                  <video
+                    src={msg.videoUrl}
+                    controls
                     playsInline
-                    className="w-full h-auto object-cover"
+                    loop
+                    autoPlay
+                    muted={!msg.audioBase64} // Autoplay muted if audio plays separately, or unmuted if standalone
+                    className="w-full h-auto object-cover max-h-80"
                   />
+                  <div className="absolute top-2 left-2 bg-black/60 backdrop-blur-md px-2 py-0.5 rounded-md text-[10px] text-purple-300 flex items-center gap-1 font-medium">
+                    <span className="w-1.5 h-1.5 rounded-full bg-purple-400 animate-pulse"></span>
+                    Aura Live
+                  </div>
                 </div>
               )}
               
@@ -728,6 +788,38 @@ export default function ChatApp({ currentUser }: { currentUser: User }) {
             {isRecording ? <Square className="w-5 h-5 fill-current" /> : <Mic className="w-5 h-5" />}
           </button>
 
+          {/* ADDED: Attached Image Thumbnail Preview before sending */}
+          {selectedImage && (
+            <div className="flex items-center gap-2 p-2 mb-2 bg-gray-800/80 rounded-lg w-fit border border-purple-500/30">
+              <img 
+                src={URL.createObjectURL(selectedImage)} 
+                alt="Selected attachment" 
+                className="w-12 h-12 object-cover rounded-md" 
+              />
+              <span className="text-xs text-gray-300 max-w-[120px] truncate">{selectedImage.name}</span>
+              <button 
+                type="button" 
+                onClick={() => setSelectedImage(null)} 
+                className="text-red-400 hover:text-red-300 text-sm font-bold ml-1"
+              >
+                ✕
+              </button>
+            </div>
+          )}
+
+          {/* Hidden File Input and Gallery Trigger */}
+          <input 
+            type="file" 
+            ref={fileInputRef} 
+            accept="image/*" 
+            className="hidden" 
+            onChange={(e) => {
+              if (e.target.files && e.target.files[0]) {
+                setSelectedImage(e.target.files[0]);
+              }
+            }} 
+          />
+
           {/* টেক্সট ইনপুট এবং সেন্ড বাটন */}
           <form onSubmit={handleTextSend} className="flex-1 flex items-center gap-2">
             <input
@@ -738,6 +830,7 @@ export default function ChatApp({ currentUser }: { currentUser: User }) {
               className="w-full bg-transparent border-none focus:ring-0 text-white placeholder-gray-500 text-[15px] px-2 outline-none"
               disabled={isLoading || isRecording} // রেকর্ডিং চলাকালীন টাইপিং বন্ধ থাকবে
             />
+
             <button
               type="submit"
               disabled={(!input.trim() && !selectedImage) || isLoading}
@@ -753,20 +846,13 @@ export default function ChatApp({ currentUser }: { currentUser: User }) {
       {/* MESSENGER STYLE IMAGE ZOOM MODAL */}
       {viewingImage && (
         <div 
-          className="fixed inset-0 bg-black/95 z-9999 flex items-center justify-center p-4 backdrop-blur-md animate-in fade-in duration-200"
-          onClick={() => setViewingImage(null)} // বাইরে ক্লিক করলেই ক্লোজ হয়ে যাবে
+          className="fixed inset-0 bg-black/95 z-[9999] flex items-center justify-center p-4" 
+          onClick={() => setViewingImage(null)}
         >
-          <button 
-            onClick={() => setViewingImage(null)} 
-            className="absolute top-6 right-6 text-white bg-gray-800/50 hover:bg-red-500 rounded-full w-10 h-10 flex items-center justify-center transition-colors text-xl"
-          >
-            ❌
-          </button>
           <img 
             src={viewingImage} 
-            className="max-w-full max-h-[90vh] object-contain rounded-lg shadow-[0_0_50px_rgba(0,0,0,0.5)]" 
-            alt="Zoomed Selfie" 
-            onClick={(e) => e.stopPropagation()} // ছবির উপর ক্লিক করলে যেন ক্লোজ না হয়
+            alt="Full View" 
+            className="max-w-full max-h-full rounded-lg object-contain shadow-2xl" 
           />
         </div>
       )}

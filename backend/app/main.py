@@ -1,16 +1,23 @@
 from dotenv import load_dotenv
+
+from app.routers import analytics, chat
+
 # Load environment variables
 load_dotenv()
 
 import os
 import certifi
+
+import asyncio
+from contextlib import asynccontextmanager
+from app.services.proactive_worker import start_proactive_background_loop
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pymongo import MongoClient
 from pydantic import BaseModel
 from datetime import datetime, timezone
 
-from app.routers import chat, voice, analytics
+from app.routers import voice
 from app.database.session import engine, Base
 from app.database import models
 from fastapi.staticfiles import StaticFiles
@@ -22,7 +29,16 @@ try:
 except Exception as e:
     print(f"[WARNING] Could not run create_all: {e}")
 
-app = FastAPI(title="Companion OS", version="1.0")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup: Run Proactive Background Task in detached thread
+    bg_task = asyncio.create_task(start_proactive_background_loop())
+    yield
+    # Shutdown: Cancel background task
+    bg_task.cancel()
+
+app = FastAPI(title="Companion OS", version="1.0", lifespan=lifespan)
 
 # CORS Middleware (ফ্রন্টএন্ডকে ব্যাকএন্ডের সাথে কথা বলার পারমিশন দেয়)
 app.add_middleware(
@@ -35,15 +51,17 @@ app.add_middleware(
 
 # Include the chat routing logic
 app.include_router(chat.router)
-app.include_router(voice.router, tags=["Voice"])
+app.include_router(voice.router)
 app.include_router(analytics.router)
 
-os.makedirs("app/static/selfies", exist_ok=True)
-app.mount("/static", StaticFiles(directory="app/static"), name="static")
+# Ensure static folder is accessible from backend
+static_path = os.path.join(os.getcwd(), "app", "static")
+os.makedirs(static_path, exist_ok=True)
+app.mount("/static", StaticFiles(directory=static_path), name="static")
 
 @app.get("/")
 async def root():
-    return {"message": "Aura Companion OS is running perfectly. Safe space activated."}
+    return {"message": "Aura is running perfectly. Safe space activated."}
 
 
 # ==========================================
