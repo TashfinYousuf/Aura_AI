@@ -7,12 +7,13 @@ load_dotenv()
 
 import os
 import certifi
-
 import asyncio
+
 from contextlib import asynccontextmanager
-from app.services.proactive_worker import start_proactive_background_loop
+from fastapi.staticfiles import StaticFiles
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+
 from pymongo import MongoClient
 from pydantic import BaseModel
 from datetime import datetime, timezone
@@ -20,7 +21,8 @@ from datetime import datetime, timezone
 from app.routers import voice
 from app.database.session import engine, Base
 from app.database import models
-from fastapi.staticfiles import StaticFiles
+from app.services.proactive_worker import start_proactive_background_loop
+from app.integrations.telegram_adapter import router as telegram_router
 
 # Create database tables (অন্যান্য লোকাল মেমোরি টেবিলগুলোর জন্য)
 try:

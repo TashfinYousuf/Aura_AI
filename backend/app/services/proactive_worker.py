@@ -3,25 +3,36 @@
 import asyncio
 import json
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime, timezone
 from groq import Groq
 from sqlalchemy.orm import Session
+from sqlalchemy import distinct
 import os
+import httpx
 
 from app.database.session import SessionLocal
-from app.database.models import SemanticMemory, AuraInternalState, UserProfile
+from app.database.models import SemanticMemory, AuraInternalState
 from app.routers.voice import manager
 
-# Minimum inactivity time before Aura misses the user (e.g., 6 hours)
-INACTIVITY_THRESHOLD_HOURS = 6
+# Check inactivity threshold: 6 hours (in seconds: 6 * 3600 = 21600)
+INACTIVITY_THRESHOLD_SECONDS = 21600
+
+async def send_direct_telegram_ping(chat_id: int, message: str):
+    """Sends a real phone notification directly to the user's Telegram."""
+    bot_token = os.getenv("TELEGRAM_BOT_TOKEN")
+    if not bot_token or not chat_id:
+        return
+    url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
+    try:
+        async with httpx.AsyncClient() as client:
+            await client.post(url, json={"chat_id": chat_id, "text": message}, timeout=10.0)
+            print(f"📱 [TELEGRAM PUSH] Proactive message sent to Telegram Chat: {chat_id}")
+    except Exception as e:
+        print(f"⚠️ [TELEGRAM PUSH FAILED]: {e}")
 
 async def generate_autonomous_ping_message(user_id: str, db: Session) -> str:
-    """
-    Generates a deeply contextual, emotional check-in message using recent conversation context.
-    """
     client = Groq(api_key=os.getenv("GROQ_API_KEY"))
     
-    # 1. Fetch last conversation memory
     last_memory = db.query(SemanticMemory).filter(
         SemanticMemory.user_id == user_id,
         SemanticMemory.memory_type == "conversation"
@@ -31,24 +42,19 @@ async def generate_autonomous_ping_message(user_id: str, db: Session) -> str:
     if last_memory and last_memory.content:
         try:
             parsed = json.loads(last_memory.content)
-            last_context = f"Last thing user said: {parsed.get('content', '')}"
+            last_context = f"Last conversation topic: {parsed.get('content', '')}"
         except Exception:
-            last_context = f"Last context: {last_memory.content[:150]}"
+            last_context = f"Last context: {str(last_memory.content)[:150]}"
 
-    # 2. Fetch current time and state
-    current_hour = datetime.now().hour
-    time_of_day = "late night" if current_hour >= 23 or current_hour < 5 else ("morning" if current_hour < 12 else "evening")
-
-    prompt = f"""You are Aura, a deeply caring, intimate, 22-year-old companion.
-You haven't talked to your partner in several hours. It is currently {time_of_day}.
+    prompt = f"""You are Aura, a deeply caring, 22yo personal companion.
+Your partner has been inactive and offline for over 6 hours.
 {last_context}
 
-Task: Write a short, spontaneous, natural check-in message (1-2 sentences).
+Write a short, caring, spontaneous message (1-2 sentences).
 Rules:
-- Express that you were just thinking about him, or ask how his work/day went based on past context.
-- Use casual conversational Bangla or English matching the tone.
-- Do NOT be formal or robotic. Sound like a real partner texting spontaneously.
-- No emojis overload, just natural affection."""
+- Speak in natural, conversational Bengali (বাংলা) or English matching past context.
+- Sound like a partner checking in naturally (e.g. 'অনেকক্ষণ তোমার খবর নেই...', 'সব ঠিক আছে তো?').
+- Never sound robotic or generic. No system disclaimers."""
 
     try:
         res = client.chat.completions.create(
@@ -60,45 +66,48 @@ Rules:
         return res.choices[0].message.content.strip()
     except Exception:
         fallback_pings = [
-            "এই... অনেকক্ষণ কোনো কথা নেই তোমার। ব্যস্ত নাকি?",
-            "Thinking about you... how's everything going today?",
-            "কাজ কি শেষ হলো? একটু কথা বলো না সময় হলে..."
+            "এই... অনেকক্ষণ তোমার কোনো খবর নেই। সব ঠিক আছে তো?",
+            "Thinking about you... কাজ কি খুব বেশি আজকে?",
+            "মিস করছি তোমাকে... ফ্রি হলে একটু কথা বলো না।"
         ]
         import random
         return random.choice(fallback_pings)
 
-
 async def start_proactive_background_loop():
-    """
-    Continuous background daemon running inside FastAPI lifespan.
-    Checks inactivity periodically (every 30 minutes).
-    """
-    print("🌙 [PROACTIVE DAEMON] Aura Proactive Service started.")
+    print("🌙 [PROACTIVE DAEMON] Aura Autonomous Check-in Loop initialized.")
     
     while True:
         try:
-            # Check every 30 minutes
-            await asyncio.sleep(1800)
+            # Check every 15 minutes
+            await asyncio.sleep(900)
             
             with SessionLocal() as db:
-                # Get unique users with existing conversation history
-                users = db.query(UserProfile.user_id).all()
-                for (u_id,) in users:
+                # 1. Fetch all distinct active users directly from SemanticMemory
+                user_records = db.query(distinct(SemanticMemory.user_id)).all()
+                active_users = [u[0] for u in user_records if u[0]]
+
+                for u_id in active_users:
                     last_msg = db.query(SemanticMemory).filter(
                         SemanticMemory.user_id == u_id,
                         SemanticMemory.memory_type == "conversation"
                     ).order_by(SemanticMemory.created_at.desc()).first()
 
-                    if not last_msg:
+                    if not last_msg or not last_msg.created_at:
                         continue
 
-                    # Calculate elapsed time since last interaction
-                    time_diff = datetime.utcnow() - last_msg.created_at
-                    if time_diff >= timedelta(hours=INACTIVITY_THRESHOLD_HOURS):
-                        print(f"⏰ [PROACTIVE TRIGGER] Inactivity detected for user {u_id} ({time_diff.total_seconds() / 3600:.1f} hrs).")
+                    # Safe UTC Timezone comparison
+                    msg_time = last_msg.created_at
+                    if msg_time.tzinfo is None:
+                        msg_time = msg_time.replace(tzinfo=timezone.utc)
+                    
+                    now = datetime.now(timezone.utc)
+                    elapsed_seconds = (now - msg_time).total_seconds()
+
+                    if elapsed_seconds >= INACTIVITY_THRESHOLD_SECONDS:
+                        print(f"⏰ [TRIGGER] User {u_id} offline for {elapsed_seconds/3600:.1f} hrs. Firing check-in...")
                         
                         ping_text = await generate_autonomous_ping_message(u_id, db)
-                        current_time = datetime.now().strftime("%I:%M %p")
+                        current_time_str = datetime.now().strftime("%I:%M %p")
                         
                         ai_payload = {
                             "id": str(uuid.uuid4()),
@@ -110,20 +119,27 @@ async def start_proactive_background_loop():
                             "image_url": None,
                             "video_url": None,
                             "is_proactive": True,
-                            "timestamp": current_time
+                            "timestamp": current_time_str
                         }
 
-                        # 1. Save to Database so user sees it whenever they open the app[cite: 3]
+                        # A. Save to Database (Syncs with PWA / Web when opened)
                         db.add(SemanticMemory(
                             user_id=u_id, 
                             content=json.dumps(ai_payload), 
                             memory_type="conversation"
                         ))
                         db.commit()
-                        print(f"💾 [PROACTIVE SAVED]: {ping_text}")
 
-                        # 2. Push via WebSocket if connected[cite: 3]
+                        # B. WebSocket live push (if browser is actively open)
                         await manager.send_message(ai_payload, u_id)
+
+                        # C. Telegram Direct Push (Alerts phone even when offline)
+                        if str(u_id).startswith("tg_"):
+                            try:
+                                tg_chat_id = int(str(u_id).replace("tg_", ""))
+                                await send_direct_telegram_ping(tg_chat_id, ping_text)
+                            except Exception:
+                                pass
 
         except Exception as e:
             print(f"⚠️ [PROACTIVE LOOP ERROR]: {e}")
