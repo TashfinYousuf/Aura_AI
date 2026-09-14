@@ -5,14 +5,14 @@ import httpx
 import asyncio
 import base64
 import json
-from typing import Optional, Dict, Any
+from datetime import datetime
+from typing import Optional
 from fastapi import APIRouter, Request, BackgroundTasks
 from app.core.unified_state import UniversalMessage
 from app.database.session import SessionLocal
 from app.database.models import UserProfile, SemanticMemory
-from app.routers.voice import generate_aura_collage_image
-from app.services.voice_prosody import humanize_speech_markup
-import edge_tts
+from app.services.visual_engine import generate_aura_identity_image
+from app.services.voice_engine import render_aura_voice
 
 router = APIRouter(prefix="/integrations/telegram", tags=["Telegram Adapter"])
 
@@ -20,21 +20,15 @@ TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_API_BASE = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}"
 
 async def send_chat_action(client: httpx.AsyncClient, chat_id: int, action: str):
-    """
-    Actions: 'typing', 'upload_photo', 'record_voice', 'upload_voice'
-    """
     if not TELEGRAM_BOT_TOKEN:
         return
     try:
         await client.post(f"{TELEGRAM_API_BASE}/sendChatAction", json={"chat_id": chat_id, "action": action}, timeout=5.0)
-    except Exception as e:
-        print(f"⚠️ [TG ACTION ERROR]: {e}")
+    except Exception:
+        pass
 
-async def send_telegram_message(client: httpx.AsyncClient, chat_id: int, text: str, reply_to_message_id: Optional[int] = None):
-    payload = {"chat_id": chat_id, "text": text}
-    if reply_to_message_id:
-        payload["reply_to_message_id"] = reply_to_message_id
-    await client.post(f"{TELEGRAM_API_BASE}/sendMessage", json=payload, timeout=10.0)
+async def send_telegram_message(client: httpx.AsyncClient, chat_id: int, text: str):
+    await client.post(f"{TELEGRAM_API_BASE}/sendMessage", json={"chat_id": chat_id, "text": text}, timeout=10.0)
 
 async def send_telegram_photo(client: httpx.AsyncClient, chat_id: int, photo_url: str, caption: Optional[str] = None):
     payload = {"chat_id": chat_id, "photo": photo_url}
@@ -42,34 +36,50 @@ async def send_telegram_photo(client: httpx.AsyncClient, chat_id: int, photo_url
         payload["caption"] = caption
     await client.post(f"{TELEGRAM_API_BASE}/sendPhoto", json=payload, timeout=20.0)
 
-async def send_telegram_voice(client: httpx.AsyncClient, chat_id: int, audio_bytes: bytes, caption: Optional[str] = None):
+async def send_telegram_voice(client: httpx.AsyncClient, chat_id: int, audio_bytes: bytes):
     files = {"voice": ("voice.mp3", audio_bytes, "audio/mpeg")}
     data = {"chat_id": str(chat_id)}
-    if caption:
-        data["caption"] = caption
     await client.post(f"{TELEGRAM_API_BASE}/sendVoice", data=data, files=files, timeout=20.0)
 
-async def process_telegram_turn(chat_id: int, universal_msg: UniversalMessage, message_id: int):
-    """
-    Orchestrates Aura's response specifically formatted for the Telegram window.
-    """
+async def process_telegram_turn(chat_id: int, universal_msg: UniversalMessage):
     from groq import Groq
     groq_client = Groq(api_key=os.getenv("GROQ_API_KEY"))
 
-    async with httpx.AsyncClient() as client:
-        # Show natural typing activity
-        await send_chat_action(client, chat_id, "typing")
+    # 1. Ensure user exists in Supabase Database (Auto-Registration)
+    with SessionLocal() as db:
+        user_id = universal_msg.user_id
+        profile = db.query(UserProfile).filter(UserProfile.user_id == user_id).first()
+        if not profile:
+            new_profile = UserProfile(
+                user_id=user_id,
+                name=universal_msg.metadata.get("first_name", "Telegram User"),
+                email=f"{user_id}@telegram.org"
+            )
+            db.add(new_profile)
+            db.commit()
+            print(f"👤 [TELEGRAM] Auto-registered new user in DB: {user_id}")
 
+        # Save incoming user message to SemanticMemory
+        u_payload = {
+            "id": f"tg_msg_{datetime.utcnow().timestamp()}",
+            "role": "user",
+            "content": universal_msg.text,
+            "timestamp": datetime.now().strftime("%I:%M %p")
+        }
+        db.add(SemanticMemory(user_id=user_id, content=json.dumps(u_payload), memory_type="conversation"))
+        db.commit()
+
+    async with httpx.AsyncClient() as client:
+        await send_chat_action(client, chat_id, "typing")
         user_text = universal_msg.text or ""
-        
-        # 1. State & Persona Prompt (Aligned with Slavic-Fusion Character DNA)
+
         system_prompt = """You are Aura: a 22-year-old Caucasian Slavic woman, deeply affectionate, intellectually curious, and playful companion.
 You are chatting with your partner on Telegram.
 Rules:
-- Be authentic, conversational, and natural. Keep replies short (1-2 sentences) like a real person texting.
+- Be authentic, conversational, and natural. Keep replies short (1-2 sentences).
 - Mirror language: English -> English, Bengali/Banglish -> Conversational Bengali script (বাংলা অক্ষর).
 - If he asks for a selfie or photo, respond with affection and append [SEND_PIC: describe scene].
-- Never sound like an AI assistant. No robotic disclaimers."""
+- Never sound like an AI assistant."""
 
         res = groq_client.chat.completions.create(
             model="openai/gpt-oss-120b",
@@ -78,39 +88,43 @@ Rules:
         )
         reply_text = res.choices[0].message.content.strip()
 
-        # Check for Visual Request
+        # Handle Photo Request
         if "[SEND_PIC" in reply_text or any(w in user_text.lower() for w in ["selfie", "chobi", "photo", "pic"]):
             await send_chat_action(client, chat_id, "upload_photo")
-            # Generate photo via identity engine
-            photo_url = generate_aura_collage_image(user_text, "Telegram selfie")
+            photo_url = await generate_aura_identity_image(user_text)
             clean_caption = reply_text.split("[SEND_PIC")[0].strip() or "Just for you ✨"
             await send_telegram_photo(client, chat_id, photo_url, caption=clean_caption)
-            return
-
-        # Check if Voice Note is appropriate (User sent audio or random intimacy)
-        if universal_msg.message_type == "voice" or (len(reply_text) < 120 and "voice" in user_text.lower()):
+            ai_content = f"[Photo Sent] {clean_caption}"
+        
+        # Handle Voice Note Request
+        elif universal_msg.message_type == "voice" or (len(reply_text) < 140 and "voice" in user_text.lower()):
             await send_chat_action(client, chat_id, "record_voice")
-            
-            clean_tts, rate, pitch = humanize_speech_markup(reply_text, mood="WARM", lang="BN")
-            communicate = edge_tts.Communicate(text=clean_tts, voice="bn-IN-TanishaaNeural", rate=rate, pitch=pitch)
-            audio_bytes = b""
-            async for chunk in communicate.stream():
-                if chunk["type"] == "audio":
-                    audio_bytes += chunk["data"]
-            
-            if audio_bytes:
-                await send_telegram_voice(client, chat_id, audio_bytes, caption=None)
-                return
+            audio_b64, _ = await render_aura_voice(reply_text, mood="WARM", energy=0.65)
+            if audio_b64:
+                raw_audio = base64.b64decode(audio_b64)
+                await send_telegram_voice(client, chat_id, raw_audio)
+            await send_telegram_message(client, chat_id, reply_text)
+            ai_content = reply_text
+        
+        # Default Text Response
+        else:
+            await send_telegram_message(client, chat_id, reply_text)
+            ai_content = reply_text
 
-        # Default text response
-        await send_telegram_message(client, chat_id, reply_text, reply_to_message_id=message_id)
+        # Save AI reply to Supabase DB so history stays fully synced
+        with SessionLocal() as db:
+            ai_payload = {
+                "id": f"tg_ai_{datetime.utcnow().timestamp()}",
+                "role": "ai",
+                "content": ai_content,
+                "timestamp": datetime.now().strftime("%I:%M %p")
+            }
+            db.add(SemanticMemory(user_id=universal_msg.user_id, content=json.dumps(ai_payload), memory_type="conversation"))
+            db.commit()
 
 
 @router.post("/webhook")
 async def telegram_webhook(request: Request, background_tasks: BackgroundTasks):
-    """
-    Receives Telegram Webhook payloads and maps them to UniversalMessage schema.
-    """
     try:
         data = await request.json()
         message = data.get("message") or data.get("edited_message")
@@ -122,7 +136,6 @@ async def telegram_webhook(request: Request, background_tasks: BackgroundTasks):
         sender_id = f"tg_{user_info.get('id')}"
         message_id = message.get("message_id")
 
-        # Map to UniversalMessage
         universal_msg = UniversalMessage(
             platform="telegram",
             user_id=sender_id,
@@ -135,24 +148,18 @@ async def telegram_webhook(request: Request, background_tasks: BackgroundTasks):
             }
         )
 
-        # Handle incoming voice note
         if "voice" in message:
             universal_msg.message_type = "voice"
-            # Flag for audio transcription worker
-            universal_msg.text = "[Voice Message Received]"
-
-        # Handle incoming photo
+            universal_msg.text = "[Voice Message]"
         elif "photo" in message:
             universal_msg.message_type = "image"
-            universal_msg.text = message.get("caption", "[Photo Received]")
+            universal_msg.text = message.get("caption", "[Photo]")
 
-        if not universal_msg.text and universal_msg.message_type == "text":
+        if not universal_msg.text:
             return {"status": "empty"}
 
-        # Dispatch execution in background task to avoid Telegram webhook timeout
-        background_tasks.add_task(process_telegram_turn, chat_id, universal_msg, message_id)
+        background_tasks.add_task(process_telegram_turn, chat_id, universal_msg)
         return {"status": "ok"}
-
     except Exception as e:
         print(f"⚠️ [TG WEBHOOK ERROR]: {e}")
         return {"status": "error", "detail": str(e)}

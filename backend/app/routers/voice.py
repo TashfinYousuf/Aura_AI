@@ -26,7 +26,8 @@ from duckduckgo_search import DDGS
 from app.database.session import SessionLocal
 from app.database.models import SemanticMemory, EmotionLog
 from app.services.avatar_service import generate_talking_avatar_video
-
+from app.services.visual_engine import generate_aura_identity_image
+from app.services.voice_engine import render_aura_voice
 
 router = APIRouter(prefix="/api/voice", tags=["Voice Engine"])
 
@@ -430,19 +431,20 @@ CRITICAL RULES:
             clean_chat = re.sub(r'\[SEND_VID:.*?\]', '', clean_chat).strip()
 
             clean_tts = re.sub(r'\[SEND_PIC:.*?\]', '', tts_text).strip()
-            clean_tts = re.sub(r'\[SEND_VID:.*?\]', '', clean_tts).strip()
+            clean_tts = re.sub(r'\[SEND_VID:.*?\]', '', tts_text).strip()
             clean_tts = re.sub(r'http\S+', '', clean_tts).strip()
             clean_tts = re.sub(r'[^\w\s,.\?!।\'"a-zA-Z0-9\u0980-\u09FF]', '', clean_tts).strip()
-            
+
             # Format voice text with natural human pauses and fillers
             clean_tts, rate, pitch = humanize_speech_markup(
-                text=tts_text, 
+                text=clean_tts, 
                 mood=mood, 
                 lang=lang
             )
 
             is_voice_note = bool(payload.get("type") == "audio" or random.random() > 0.80)
             voice_model = "en-US-EmmaNeural" if lang == "EN" else "bn-IN-TanishaaNeural"
+            audio_base64 = None
 
             if clean_tts:
                 try:
@@ -463,14 +465,14 @@ CRITICAL RULES:
                     print(f"⚠️ [TTS ERROR]: {e}")
 
 
-            # --- 6. IMAGE & VIDEO GENERATION ENGINE ---
+            # --- 6. IMAGE GENERATION ENGINE (REFERENCE CONDITIONED + QA) ---
             img_match = re.search(r'\[SEND_PIC:(.*?)\]', chat_text, re.IGNORECASE)
-            is_pic_request = img_match or any(w in user_text.lower() for w in ["selfie", "chobi", "photo", "pic", "nude", "picture"])
+            is_pic_request = img_match or any(w in user_text.lower() for w in ["selfie", "chobi", "photo", "pic", "picture"])
             
             if is_pic_request:
                 context_str = img_match.group(1).strip() if img_match else user_text
-                print(f"📸 [TRIGGER] Aura taking selfie for context: {context_str}")
-                image_url = generate_aura_collage_image(user_text, context_str)
+                print(f"📸 [TRIGGER] Aura generating reference-conditioned selfie for: {context_str}")
+                image_url = await generate_aura_identity_image(user_text=context_str)
 
 
             # If user explicitly asks for video OR it's a voice note with generated audio
