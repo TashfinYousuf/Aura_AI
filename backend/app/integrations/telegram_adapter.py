@@ -5,16 +5,21 @@ import httpx
 import asyncio
 import base64
 import json
+
 from datetime import datetime
 from typing import Optional
 from fastapi import APIRouter, Request, BackgroundTasks
+
 from app.core.unified_state import UniversalMessage
 from app.database.session import SessionLocal
 from app.database.models import UserProfile, SemanticMemory
 from app.services.visual_engine import generate_aura_identity_image
 from app.services.voice_engine import render_aura_voice
+from app.services.text_realization import realize_conversational_response
+from app.core.prompts import build_system_prompt
 
 router = APIRouter(prefix="/integrations/telegram", tags=["Telegram Adapter"])
+
 
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_API_BASE = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}"
@@ -43,23 +48,20 @@ async def send_telegram_voice(client: httpx.AsyncClient, chat_id: int, audio_byt
 
 async def process_telegram_turn(chat_id: int, universal_msg: UniversalMessage):
     from groq import Groq
+    from app.services.state_engine import evaluate_interaction_state, create_response_director_plan
+    from app.services.text_realization import realize_conversational_response
+    
     groq_client = Groq(api_key=os.getenv("GROQ_API_KEY"))
 
-    # 1. Ensure user exists in Supabase Database (Auto-Registration)
+    # 1. Ensure user exists & save message
     with SessionLocal() as db:
         user_id = universal_msg.user_id
         profile = db.query(UserProfile).filter(UserProfile.user_id == user_id).first()
         if not profile:
-            new_profile = UserProfile(
-                user_id=user_id,
-                name=universal_msg.metadata.get("first_name", "Telegram User"),
-                email=f"{user_id}@telegram.org"
-            )
+            new_profile = UserProfile(user_id=user_id)
             db.add(new_profile)
             db.commit()
-            print(f"👤 [TELEGRAM] Auto-registered new user in DB: {user_id}")
 
-        # Save incoming user message to SemanticMemory
         u_payload = {
             "id": f"tg_msg_{datetime.utcnow().timestamp()}",
             "role": "user",
@@ -73,20 +75,49 @@ async def process_telegram_turn(chat_id: int, universal_msg: UniversalMessage):
         await send_chat_action(client, chat_id, "typing")
         user_text = universal_msg.text or ""
 
-        system_prompt = """You are Aura: a 22-year-old Caucasian Slavic woman, deeply affectionate, intellectually curious, and playful companion.
-You are chatting with your partner on Telegram.
-Rules:
-- Be authentic, conversational, and natural. Keep replies short (1-2 sentences).
-- Mirror language: English -> English, Bengali/Banglish -> Conversational Bengali script (বাংলা অক্ষর).
-- If he asks for a selfie or photo, respond with affection and append [SEND_PIC: describe scene].
-- Never sound like an AI assistant."""
+        # --- SPECIAL COMMAND: ACCOUNT LINKING ---
+        if user_text.startswith("/link"):
+            parts = user_text.split()
+            if len(parts) > 1:
+                target_uid = parts[1].strip()
+                with SessionLocal() as db:
+                    # 1. Look for existing web profile
+                    master_profile = db.query(UserProfile).filter(UserProfile.user_id == target_uid).first()
+                    if not master_profile:
+                        # Create if not existing yet
+                        master_profile = UserProfile(user_id=target_uid)
+                        db.add(master_profile)
+
+                    master_profile.telegram_id = str(chat_id)
+                    db.commit()
+                    await send_telegram_message(
+                        client, 
+                        chat_id, 
+                        f"✅ Account successfully linked!\nAura now recognizes you across both Web and Telegram as a single person. 💜"
+                    )
+                    print(f"🔗 [LINK SUCCESS] Telegram {chat_id} linked to Web UID: {target_uid}")
+            else:
+                await send_telegram_message(client, chat_id, "⚠️ Please provide your Web UID. Usage: /link YOUR_FIREBASE_UID")
+            return
+        
+        # 2. Evaluate Unified State (Detects if user is stressed/tired)
+        current_aura_state = await evaluate_interaction_state(user_text)
+        director_plan = create_response_director_plan(current_aura_state, user_text)
+
+        state_context = f"State: Mode={current_aura_state.conversation_mode}, User Emotion={current_aura_state.user_emotion}, Goal={director_plan.text_goal}"
+        
+        system_prompt = build_system_prompt(state_context=state_context)
 
         res = groq_client.chat.completions.create(
             model="openai/gpt-oss-120b",
             messages=[{"role": "system", "content": system_prompt}, {"role": "user", "content": user_text}],
-            temperature=0.75
+            temperature=0.6
         )
+
         reply_text = res.choices[0].message.content.strip()
+        
+        # 3. Apply Text Realization Filter (Prunes AI cliches & awkward phrasings)
+        reply_text = await realize_conversational_response(reply_text, user_text)
 
         # Handle Photo Request
         if "[SEND_PIC" in reply_text or any(w in user_text.lower() for w in ["selfie", "chobi", "photo", "pic"]):
@@ -106,20 +137,17 @@ Rules:
             await send_telegram_message(client, chat_id, reply_text)
             ai_content = reply_text
         
-        # Default Text Response
-        else:
-            await send_telegram_message(client, chat_id, reply_text)
-            ai_content = reply_text
+        # Handle Photo / Voice / Text delivery...
+        await send_telegram_message(client, chat_id, reply_text)
 
-        # Save AI reply to Supabase DB so history stays fully synced
         with SessionLocal() as db:
             ai_payload = {
                 "id": f"tg_ai_{datetime.utcnow().timestamp()}",
                 "role": "ai",
-                "content": ai_content,
+                "content": reply_text,
                 "timestamp": datetime.now().strftime("%I:%M %p")
             }
-            db.add(SemanticMemory(user_id=universal_msg.user_id, content=json.dumps(ai_payload), memory_type="conversation"))
+            db.add(SemanticMemory(user_id=user_id, content=json.dumps(ai_payload), memory_type="conversation"))
             db.commit()
 
 

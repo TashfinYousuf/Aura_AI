@@ -1,6 +1,7 @@
 import os
+
 from datetime import datetime, timezone
-from sqlalchemy import Column, Integer, String, Text, DateTime, JSON, Boolean, ForeignKey
+from sqlalchemy import Column, Integer, String, Text, DateTime, Float, JSON, Boolean, ForeignKey
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
 from app.database.session import Base
@@ -18,7 +19,8 @@ class UserProfile(Base):
     __tablename__ = "user_profiles"
     
     id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(String, unique=True, index=True)
+    user_id = Column(String, unique=True, index=True, nullable=False) # Master ID (e.g., Firebase UID)
+    telegram_id = Column(String, unique=True, index=True, nullable=True) # Linked Telegram ID
     companion_name = Column(String, default="Aura")
     relationship_level = Column(Integer, default=1)
     current_mood = Column(String, default="Calm")
@@ -145,3 +147,14 @@ class AuraInternalState(Base):
     energy_level = Column(Integer, default=80) # 0 = exhausted, 100 = hyper
     
     last_updated = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
+class RelationalPattern(Base):
+    __tablename__ = "relational_patterns"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(String, index=True, nullable=False)
+    trigger_state = Column(String, nullable=False)   # e.g., "stressed", "late_night", "celebrating"
+    preferred_reaction = Column(Text, nullable=False) # e.g., "Do not give lecture. Be soft, teasing and listen."
+    confidence_score = Column(Float, default=1.0)
+    created_at = Column(DateTime, default=datetime.utcnow)

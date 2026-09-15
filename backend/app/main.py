@@ -23,6 +23,7 @@ from app.database.session import engine, Base
 from app.database import models
 from app.services.proactive_worker import start_proactive_background_loop
 from app.integrations.telegram_adapter import router as telegram_router
+from run_telegram import run_bot_polling
 
 # Create database tables (অন্যান্য লোকাল মেমোরি টেবিলগুলোর জন্য)
 try:
@@ -34,11 +35,19 @@ except Exception as e:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup: Run Proactive Background Task in detached thread
-    bg_task = asyncio.create_task(start_proactive_background_loop())
+    # ১. প্রোঅ্যাক্টিভ চেকার ব্যাকগ্রাউন্ডে চালু হবে
+    proactive_task = asyncio.create_task(start_proactive_background_loop())
+    
+    # ২. টেলিগ্রাম লং-পোলিং ব্যাকগ্রাউন্ডে চালু হবে (কোনো আলাদা সার্ভার ছাড়াই ২৪/৭ চলবে)
+    telegram_task = asyncio.create_task(run_bot_polling())
+    
+    print("🚀 [SYSTEM] Both Proactive Daemon & Telegram Polling running in background.")
     yield
-    # Shutdown: Cancel background task
-    bg_task.cancel()
+    
+    # শাটডাউনে টাস্ক ক্লিনআপ
+    proactive_task.cancel()
+    telegram_task.cancel()
+    
 
 app = FastAPI(title="Companion OS", version="1.0", lifespan=lifespan)
 

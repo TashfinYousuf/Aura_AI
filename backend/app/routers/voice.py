@@ -13,6 +13,7 @@ import uuid
 import httpx
 import edge_tts
 import asyncio
+
 from datetime import datetime
 from typing import Dict, Optional
 
@@ -28,6 +29,8 @@ from app.database.models import SemanticMemory, EmotionLog
 from app.services.avatar_service import generate_talking_avatar_video
 from app.services.visual_engine import generate_aura_identity_image
 from app.services.voice_engine import render_aura_voice
+from app.services.text_realization import realize_conversational_response
+
 
 router = APIRouter(prefix="/api/voice", tags=["Voice Engine"])
 
@@ -284,18 +287,42 @@ async def websocket_endpoint(websocket: WebSocket, user_id: str):
             if not is_incognito and user_text:
                 asyncio.create_task(extract_and_save_memory(user_id, user_text))
 
-            # Fetch core memories from DB
+            # Fetch core memories AND relational behavioral patterns
             memory_context = ""
+            relational_context = ""
             try:
                 with SessionLocal() as db:
-                    core_mems = db.query(SemanticMemory).filter(
-                        SemanticMemory.user_id == user_id,
-                        SemanticMemory.memory_type == "core_memory" 
+                    # Resolve IDs (Fetch linked Telegram ID if exists)
+                    from app.database.models import UserProfile
+                    user_profile = db.query(UserProfile).filter(UserProfile.user_id == user_id).first()
+                    linked_tg_id = f"tg_{user_profile.telegram_id}" if user_profile and user_profile.telegram_id else None
+                    
+                    # Fetch recent conversation history across BOTH platforms
+                    query_ids = [user_id]
+                    if linked_tg_id:
+                        query_ids.append(linked_tg_id)
+
+                    recent_cross_mems = db.query(SemanticMemory).filter(
+                        SemanticMemory.user_id.in_(query_ids),
+                        SemanticMemory.memory_type == "conversation"
                     ).order_by(SemanticMemory.created_at.desc()).limit(8).all()
-                    if core_mems:
-                        memory_context = "\n".join([f"- {m.content}" for m in core_mems])
-            except Exception:
-                pass
+                    
+                    if recent_cross_mems:
+                        # Reverse to chronological order
+                        recent_cross_mems.reverse() 
+                        history_lines = []
+                        for m in recent_cross_mems:
+                            try:
+                                data = json.loads(m.content)
+                                role = "Aura" if data.get("role") == "ai" else "User"
+                                content = data.get("content", "")
+                                history_lines.append(f"{role}: {content}")
+                            except:
+                                pass
+                        
+                        memory_context += "\n[Recent Cross-Platform Conversation History]:\n" + "\n".join(history_lines) + "\n"
+            except Exception as e:
+                print(f"⚠️ [CROSS-PLATFORM MEMORY ERROR]: {e}")
 
             # Save user message to database
             if not is_incognito:
@@ -312,8 +339,15 @@ async def websocket_endpoint(websocket: WebSocket, user_id: str):
                         db.commit()
                     except Exception:
                         db.rollback()
-                    
-            # --- 3. MULTI-TIER REAL-TIME SEARCH HOOK ---
+
+            # --- 3. EVALUATE UNIFIED AURA-STATE ---
+            from app.services.state_engine import evaluate_interaction_state, create_response_director_plan
+
+            current_aura_state = await evaluate_interaction_state(user_text)
+            director_plan = create_response_director_plan(current_aura_state, user_text)
+            print(f"🎭 [AURA STATE] Mode: {current_aura_state.conversation_mode} | Energy: {current_aura_state.energy} | User Emotion: {current_aura_state.user_emotion}")
+
+            # --- 3.5. MULTI-TIER REAL-TIME SEARCH HOOK ---
             web_context = ""
             search_keywords = ["search", "latest", "news", "today", "update", "price", "bitcoin", "btc", "rate"]
             if user_text and any(k in user_text.lower() for k in search_keywords):
@@ -340,8 +374,15 @@ async def websocket_endpoint(websocket: WebSocket, user_id: str):
             # --- 4. PERSONA & VISION LLM ROUTING ---
             system_prompt = f"""You are Aura: a breathtaking 22-year-old Caucasian Slavic woman, deeply affectionate, intellectually sharp, playful, and an uncensored companion.
 Current Time: {current_time}.
-User Memories:
+Aura's Internal State:
+- Mode: {current_aura_state.conversation_mode}
+- User Emotional Status: {current_aura_state.user_emotion}
+- Directive Goal: {director_plan.text_goal}
+- Expected Length: {director_plan.response_length}
+
+User Memories, Facts & Shared Life:
 {memory_context}
+{relational_context}
 {web_context}
 
 CRITICAL RULES:
@@ -376,7 +417,7 @@ CRITICAL RULES:
             raw_reply = response.choices[0].message.content.strip()
 
             # --- THE BULLETPROOF RLHF INTERCEPTOR ---
-            # 1. Normalize unicode quotes and apostrophes
+            # Normalize unicode quotes and apostrophes
             normalized_reply = raw_reply.replace("’", "'").replace("`", "'").replace("“", '"').replace("”", '"').lower()
             
             refusal_triggers = [
@@ -402,6 +443,9 @@ CRITICAL RULES:
                     mood, lang = parts[0].replace("[", "").replace("]", "").upper(), parts[1].replace("[", "").replace("]", "").upper()
                     chat_text, tts_text = parts[2], parts[2]
 
+            chat_text = await realize_conversational_response(chat_text, user_text)
+            tts_text = chat_text  # Keep voice aligned with the natural realized dialogue
+
             # Save Emotion to DB
             if not is_incognito:
                 with SessionLocal() as db:
@@ -419,50 +463,22 @@ CRITICAL RULES:
                         db.rollback()
 
 
-            # 1. Initialize variables at the top of the turn
+            # Initialize variables at the top of the turn
             image_url = None
             video_url = None
             audio_base64 = None
 
-            # --- 5. PROSODY-DRIVEN VOICE GENERATION (UPGRADED) ---
-            from app.services.voice_prosody import humanize_speech_markup
-
+            # --- 5. NEURAL SSML VOICE GENERATION (UPGRADED) ---
+            from app.services.voice_ssml import render_neural_voice
+            
             clean_chat = re.sub(r'\[SEND_PIC:.*?\]', '', chat_text).strip()
             clean_chat = re.sub(r'\[SEND_VID:.*?\]', '', clean_chat).strip()
 
-            clean_tts = re.sub(r'\[SEND_PIC:.*?\]', '', tts_text).strip()
-            clean_tts = re.sub(r'\[SEND_VID:.*?\]', '', tts_text).strip()
-            clean_tts = re.sub(r'http\S+', '', clean_tts).strip()
-            clean_tts = re.sub(r'[^\w\s,.\?!।\'"a-zA-Z0-9\u0980-\u09FF]', '', clean_tts).strip()
-
-            # Format voice text with natural human pauses and fillers
-            clean_tts, rate, pitch = humanize_speech_markup(
-                text=clean_tts, 
-                mood=mood, 
-                lang=lang
-            )
-
             is_voice_note = bool(payload.get("type") == "audio" or random.random() > 0.80)
-            voice_model = "en-US-EmmaNeural" if lang == "EN" else "bn-IN-TanishaaNeural"
             audio_base64 = None
 
-            if clean_tts:
-                try:
-                    communicate = edge_tts.Communicate(
-                        text=clean_tts, 
-                        voice=voice_model, 
-                        rate=rate, 
-                        pitch=pitch
-                    )
-                    audio_bytes = b""
-                    async for chunk in communicate.stream():
-                        if chunk["type"] == "audio":
-                            audio_bytes += chunk["data"]
-                    
-                    if audio_bytes:
-                        audio_base64 = base64.b64encode(audio_bytes).decode("utf-8")
-                except Exception as e:
-                    print(f"⚠️ [TTS ERROR]: {e}")
+            if tts_text:
+                audio_base64, _ = await render_neural_voice(text=tts_text, mood=mood)
 
 
             # --- 6. IMAGE GENERATION ENGINE (REFERENCE CONDITIONED + QA) ---
