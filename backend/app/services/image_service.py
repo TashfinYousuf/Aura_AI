@@ -51,45 +51,16 @@ def get_local_pipeline():
 
 def generate_aura_image(user_text: str, dynamic_context: str = "") -> str:
     """
-    Main image routing engine: Compiles character DNA and sends to local or cloud tier.
+    Main image routing engine: Delegates to the realistic unedited visual engine.
     """
-    intent = {
-        "setting": "bedroom_bed" if "bed" in user_text.lower() else "bedroom_mirror",
-        "outfit": "saree" if "saree" in user_text.lower() else "bedroom_casual",
-        "expression": "teasing subtle smile, direct gaze"
-    }
-    
-    composed_prompt = composer.build_prompt(intent)
-    negative_prompt = composer.build_negative_prompt()
-
-    # Local MPS Generation on Mac
-    if IS_LOCAL_DEV:
-        try:
-            pipe = get_local_pipeline()
-            import torch
-            device = "mps" if torch.backends.mps.is_available() else "cpu"
-            
-            image = pipe(
-                prompt=composed_prompt,
-                negative_prompt=negative_prompt,
-                num_inference_steps=2,
-                guidance_scale=0.0,
-                height=512,
-                width=512
-            ).images[0]
-            
-            file_name = f"selfie_{uuid.uuid4()}.jpg"
-            file_path = os.path.join(STATIC_DIR, file_name)
-            image.save(file_path, format="JPEG", quality=95)
-            
-            if device == "mps":
-                torch.mps.empty_cache()
-                
-            return f"/static/selfies/{file_name}"
-        except Exception as e:
-            print(f"⚠️ [IMAGE ENGINE] Local pipeline error: {e}")
-
-    # Cloud Fallback (Pollinations / HuggingFace)
-    clean_text = urllib.parse.quote(composed_prompt[:250])
-    seed = random.randint(1, 999999)
-    return f"https://image.pollinations.ai/prompt/{clean_text}?width=512&height=512&nologo=true&seed={seed}&model=flux"
+    import asyncio
+    from app.services.visual_engine import generate_aura_identity_image
+    try:
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+            import concurrent.futures
+            with concurrent.futures.ThreadPoolExecutor() as pool:
+                return pool.submit(asyncio.run, generate_aura_identity_image(user_text=user_text, prompt_desc=dynamic_context)).result()
+        return loop.run_until_complete(generate_aura_identity_image(user_text=user_text, prompt_desc=dynamic_context))
+    except Exception:
+        return asyncio.run(generate_aura_identity_image(user_text=user_text, prompt_desc=dynamic_context))

@@ -1,128 +1,125 @@
-from dotenv import load_dotenv
-
-from app.routers import analytics, chat
-
-# Load environment variables
-load_dotenv()
+# FILE: backend/app/main.py
 
 import os
-import certifi
+import json
 import asyncio
-
+from datetime import datetime, timezone
+from typing import Optional
 from contextlib import asynccontextmanager
-from fastapi.staticfiles import StaticFiles
+from dotenv import load_dotenv
+
+load_dotenv()
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-
-from pymongo import MongoClient
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
-from datetime import datetime, timezone
 
-from app.routers import voice
-from app.database.session import engine, Base
-from app.database import models
+from app.database.session import SessionLocal, engine, Base
+from app.database.models import SemanticMemory
+from app.routers import analytics, chat, voice
 from app.services.proactive_worker import start_proactive_background_loop
-from app.integrations.telegram_adapter import router as telegram_router
 from run_telegram import run_bot_polling
 
-# Create database tables (অন্যান্য লোকাল মেমোরি টেবিলগুলোর জন্য)
 try:
     Base.metadata.create_all(bind=engine)
-    print("✅ Database tables created successfully!")
+    print("✅ Database tables initialized!")
 except Exception as e:
-    print(f"[WARNING] Could not run create_all: {e}")
-
+    print(f"[WARNING] Table initialization notice: {e}")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # ১. প্রোঅ্যাক্টিভ চেকার ব্যাকগ্রাউন্ডে চালু হবে
     proactive_task = asyncio.create_task(start_proactive_background_loop())
-    
-    # ২. টেলিগ্রাম লং-পোলিং ব্যাকগ্রাউন্ডে চালু হবে (কোনো আলাদা সার্ভার ছাড়াই ২৪/৭ চলবে)
     telegram_task = asyncio.create_task(run_bot_polling())
-    
-    print("🚀 [SYSTEM] Both Proactive Daemon & Telegram Polling running in background.")
+    print("🚀 [SYSTEM] Proactive Daemon & Telegram Polling running.")
     yield
-    
-    # শাটডাউনে টাস্ক ক্লিনআপ
     proactive_task.cancel()
     telegram_task.cancel()
-    
 
-app = FastAPI(title="Companion OS", version="1.0", lifespan=lifespan)
+app = FastAPI(title="Aura Companion OS", version="3.0", lifespan=lifespan)
 
-# CORS Middleware (ফ্রন্টএন্ডকে ব্যাকএন্ডের সাথে কথা বলার পারমিশন দেয়)
+origins = [
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+    os.getenv("FRONTEND_PRODUCTION_URL", "https://aura-companion.vercel.app")
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # প্রোডাকশনে ফ্রন্টএন্ডের ডোমেইন
+    allow_origins=origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Include the chat routing logic
+# Canonical Route Mounts
 app.include_router(chat.router)
 app.include_router(voice.router)
 app.include_router(analytics.router)
 
-# Ensure static folder is accessible from backend
-static_path = os.path.join(os.getcwd(), "app", "static")
-os.makedirs(static_path, exist_ok=True)
-app.mount("/static", StaticFiles(directory=static_path), name="static")
+from pathlib import Path
+static_path = Path(__file__).resolve().parent / "static"
+static_path.mkdir(parents=True, exist_ok=True)
+app.mount("/static", StaticFiles(directory=str(static_path)), name="static")
 
 @app.get("/")
 async def root():
-    return {"message": "Aura is running perfectly. Safe space activated."}
+    return {"status": "online", "message": "Aura Companion OS running."}
 
-
-# ==========================================
-# ☁️ MONGODB CLOUD DATABASE CONNECTION
-# ==========================================
-MONGO_URI = os.getenv("MONGO_URI")
-
-try:
-    client = MongoClient(MONGO_URI, tlsCAFile=certifi.where())
-    db = client["aura_os_db"] # ডাটাবেসের নাম
-    chats_collection = db["permanent_chats"] # টেবিল বা কালেকশনের নাম
-    
-    # কানেকশন ঠিক আছে কি না টেস্ট করা
-    client.admin.command('ping')
-    print("✅ Successfully connected to MongoDB Cloud!")
-except Exception as e:
-    print(f"❌ MongoDB Connection Error: {e}")
-
-# 2. Schema for receiving chat data
+# Persistence Endpoints
 class SaveMessage(BaseModel):
     user_id: str
     role: str
     content: str
-    image_url: str | None = None
+    image_url: Optional[str] = None
 
-# 3. API to SAVE message from any device (Now saves to Cloud)
 @app.post("/api/chat/save")
 def save_chat_message(msg: SaveMessage):
-    chat_data = {
-        "user_id": msg.user_id,
-        "role": msg.role,
-        "content": msg.content,
-        "image_url": msg.image_url,
-        "timestamp": datetime.now(timezone.utc)
-    }
-    chats_collection.insert_one(chat_data)
-    return {"status": "saved to cloud"}
+    with SessionLocal() as db:
+        payload = {
+            "id": f"msg_{datetime.now(timezone.utc).timestamp()}",
+            "role": msg.role,
+            "content": msg.content,
+            "imageUrl": msg.image_url,
+            "timestamp": datetime.now(timezone.utc).strftime("%I:%M %p")
+        }
+        db.add(SemanticMemory(user_id=msg.user_id, content=json.dumps(payload), memory_type="conversation"))
+        db.commit()
+    return {"status": "saved"}
 
-# 4. API to FETCH history from any device (Now fetches from Cloud)
 @app.get("/api/chat/history/{user_id}")
 def get_permanent_history(user_id: str):
-    # MongoDB থেকে ইউজারের মেসেজগুলো সময় অনুযায়ী (timestamp, 1) সাজিয়ে আনা হচ্ছে
-    chats = chats_collection.find({"user_id": user_id}).sort("timestamp", 1)
-    
-    history = []
-    for chat in chats:
-        history.append({
-            "role": chat["role"],
-            "content": chat["content"],
-            "imageUrl": chat.get("image_url")
-        })
-        
-    return history
+    with SessionLocal() as db:
+        memories = db.query(SemanticMemory).filter(
+            SemanticMemory.user_id == user_id,
+            SemanticMemory.memory_type == "conversation"
+        ).order_by(SemanticMemory.created_at.asc()).all()
+
+        history = []
+        for m in memories:
+            try:
+                data = json.loads(str(m.content))
+                history.append({
+                    "id": data.get("id", str(m.id)),
+                    "role": data.get("role", "user"),
+                    "content": data.get("content", ""),
+                    "imageUrl": data.get("imageUrl") or data.get("image_url"),
+                    "audioBase64": data.get("audioBase64") or data.get("audio_base64"),
+                    "isVoiceNote": data.get("isVoiceNote") if "isVoiceNote" in data else data.get("is_voice_note", False),
+                    "videoUrl": data.get("videoUrl") or data.get("video_url"),
+                    "presentationMode": data.get("presentationMode") or data.get("presentation_mode", "private"),
+                    "timestamp": data.get("timestamp")
+                })
+            except Exception:
+                continue
+        return history
+
+@app.delete("/api/chat/history/{user_id}")
+def clear_chat_history(user_id: str):
+    with SessionLocal() as db:
+        db.query(SemanticMemory).filter(
+            SemanticMemory.user_id == user_id,
+            SemanticMemory.memory_type == "conversation"
+        ).delete()
+        db.commit()
+    return {"status": "cleared"}

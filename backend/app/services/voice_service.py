@@ -2,33 +2,65 @@ import os
 import re
 import base64
 import edge_tts
+import tempfile
+import asyncio
 
 from openai import OpenAI
 from fastapi import UploadFile
 
-def transcribe_audio(audio_file: UploadFile) -> str:
-    """অডিও ফাইল রিসিভ করে টেক্সটে কনভার্ট করবে"""
-    api_key = os.getenv("OPENAI_API_KEY")
-    client = OpenAI(api_key=api_key)
-    
-    # অডিও ফাইলটি সাময়িকভাবে সেভ করার জন্য
-    temp_file_path = f"temp_{audio_file.filename}"
-    
+from typing import Optional
+from fastapi import UploadFile
+from groq import Groq
+from app.core.config import settings
+
+client = Groq(api_key=settings.GROQ_API_KEY) if settings.GROQ_API_KEY else None
+
+async def transcribe_audio_file(audio_file: UploadFile) -> Optional[str]:
+    """
+    Bug F13 Fixed:
+    Asynchronously reads uploaded audio payload without blocking FastAPI's main event loop.
+    Routes STT strictly through Whisper Large v3 Turbo.
+    """
+    if not settings.GROQ_API_KEY:
+        print("⚠️ [VOICE SERVICE] GROQ_API_KEY not configured!")
+        return None
+
     try:
-        with open(temp_file_path, "wb") as buffer:
-            buffer.write(audio_file.file.read())
-            
-        with open(temp_file_path, "rb") as audio:
-            transcript = client.audio.transcriptions.create(
-                model="whisper-1", 
-                file=audio
-            )
-        return transcript.text
-    
-    finally:
-        # কাজ শেষ হলে টেম্পোরারি ফাইলটি ডিলিট করে দেওয়া (স্টোরেজ বাঁচানোর জন্য)
-        if os.path.exists(temp_file_path):
-            os.remove(temp_file_path)
+        # ✅ FIX F13: Non-blocking async file read (replaces blocking audio_file.file.read())
+        audio_bytes = await audio_file.read()
+        
+        if not audio_bytes:
+            return None
+
+        # Determine safe suffix
+        filename = audio_file.filename or "audio.webm"
+        suffix = os.path.splitext(filename)[1] or ".webm"
+
+        # Create temporary file for Groq Whisper
+        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as temp_file:
+            temp_file.write(audio_bytes)
+            temp_path = temp_file.name
+
+        def _transcribe_sync(filepath: str) -> str:
+            with open(filepath, "rb") as f:
+                transcription = client.audio.transcriptions.create(
+                    model="whisper-large-v3-turbo",
+                    file=f
+                )
+                return transcription.text.strip()
+
+        # Run transcription in a non-blocking background thread pool
+        transcription_text = await asyncio.to_thread(_transcribe_sync, temp_path)
+
+        # Cleanup temp file from disk
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
+
+        return transcription_text
+
+    except Exception as e:
+        print(f"⚠️ [VOICE TRANSCRIPTION ERROR]: {e}")
+        return None
 
 
 def clean_text_for_tts(text: str) -> str:

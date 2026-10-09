@@ -105,7 +105,7 @@ async def get_relationship_status(user_id: str, db: Session = Depends(get_db)):
             "current_level": level,
             "title": title,
             "progress_to_next_level": progress_percentage
-        } #[cite: 5]
+        }
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

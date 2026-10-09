@@ -10,7 +10,13 @@ def extract_and_store_episode(db: Session, client: Groq, user_id: str, message: 
     """
     Background worker: Extracts meaningful episodic life events from emotional interactions.
     """
-    if intensity < 7:
+    milestone_keywords = [
+        "exam", "test", "job", "interview", "hospital", "sick", "doctor", "passed", 
+        "failed", "birthday", "travel", "family", "friend", "amar", "ajke", "kalke", 
+        "porikkha", "accident", "celebrat", "promotion", "relat", "breakup", "coding", "code"
+    ]
+    has_milestone_keyword = any(k in message.lower() for k in milestone_keywords)
+    if intensity < 5 and not has_milestone_keyword:
         return
 
     prompt = f"""Analyze this conversation turn and determine if an episodic memory occurred.
@@ -28,15 +34,24 @@ Output strictly JSON:
 }}"""
 
     try:
-        res = client.chat.completions.create(
-            model="openai/gpt-oss-120b",
-            messages=[{"role": "system", "content": prompt}],
-            response_format={"type": "json_object"},
-            temperature=0.1
-        )
-        data = json.loads(res.choices[0].message.content)
-        
-        if data.get("is_episode") and data.get("title"):
+        from app.core.config import settings
+        models_to_try = [settings.STRUCTURED_MODEL] + [m for m in settings.FALLBACK_CHAT_MODELS if m != settings.STRUCTURED_MODEL]
+        data = None
+        for mdl in models_to_try:
+            try:
+                res = client.chat.completions.create(
+                    model=mdl,
+                    messages=[{"role": "system", "content": prompt}],
+                    response_format={"type": "json_object"},
+                    temperature=0.1
+                )
+                data = json.loads(res.choices[0].message.content)
+                if data:
+                    break
+            except Exception:
+                continue
+
+        if data and data.get("is_episode") and data.get("title"):
             # Check if this episode was already recorded recently to avoid duplication
             recent_cutoff = datetime.utcnow() - timedelta(days=2)
             existing = db.query(SharedEpisode).filter(

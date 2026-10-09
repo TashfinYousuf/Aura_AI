@@ -158,3 +158,24 @@ class RelationalPattern(Base):
     preferred_reaction = Column(Text, nullable=False) # e.g., "Do not give lecture. Be soft, teasing and listen."
     confidence_score = Column(Float, default=1.0)
     created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class OpenLoop(Base):
+    __tablename__ = "open_loops"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(String, index=True, nullable=False)
+    topic = Column(String, nullable=False)           # e.g., "presentation", "exam", "client demo"
+    context = Column(Text, nullable=False)          # e.g., "Had an important presentation he was nervous about"
+    status = Column(String, default="active")       # "active" or "resolved"
+    created_at = Column(DateTime, default=datetime.utcnow)
+    resolved_at = Column(DateTime, nullable=True)
+
+class UserPreference(Base):
+    __tablename__ = "user_preferences"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(String, index=True, nullable=False)
+    preference_key = Column(String, nullable=False)  # e.g., "language_style", "therapy_talk", "teasing"
+    preference_val = Column(String, nullable=False)  # e.g., "prefers_banglish", "hates_it", "loves_playful_banter"
+    updated_at = Column(DateTime, default=datetime.utcnow)

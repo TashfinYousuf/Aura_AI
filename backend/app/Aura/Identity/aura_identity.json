@@ -1,0 +1,35 @@
+{
+  "identity_id": "aura_slavic_v1",
+  "archetype": "22-year-old Caucasian Slavic woman",
+  "master_references": [
+    "01_desk_casual_front.jpg",
+    "02_bed_morning_selfie.jpg",
+    "03_hallway_standing_half.jpg",
+    "04_evening_cafe_portrait.jpg"
+  ],
+  "conditioning_weights": {
+    "facial_structure": 1.0,
+    "eye_shape_and_color": 0.95,
+    "hair_texture_and_flow": 0.80,
+    "body_proportions": 0.60,
+    "wardrobe": 0.0,
+    "environment": 0.0
+  },
+  "aesthetic_dna": {
+    "camera": "candid raw smartphone front-camera, 35mm lens, natural daylight, unretouched",
+    "skin": "authentic human skin texture, visible fine pores, subtle natural imperfections, no airbrushed smoothing",
+    "lighting": "ambient indoor light, soft lamp glow, physically accurate shadows, slight sensor grain"
+  },
+  "banned_artifacts": [
+    "porcelain skin",
+    "doll face",
+    "flawless skin",
+    "airbrushed",
+    "beauty filter",
+    "3d render",
+    "cgi",
+    "anime",
+    "plastic look",
+    "over-smoothed skin"
+  ]
+}

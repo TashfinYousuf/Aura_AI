@@ -40,8 +40,9 @@ def process_nightly_dreams(db: Session, user_id: str):
             "impact_on_relationship": "How did this affect the bond? (e.g., 'Built trust through active listening')"
         }}"""
 
+        from app.core.config import settings
         response = client.chat.completions.create(
-            model="openai/gpt-oss-120b",
+            model=settings.STRUCTURED_MODEL,
             messages=[{"role": "system", "content": dream_prompt}, {"role": "user", "content": "Analyze the chats and generate the episode memory."}],
             response_format={"type": "json_object"},
             temperature=0.3

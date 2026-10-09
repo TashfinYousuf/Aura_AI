@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import axios from "axios";
 import { Target, CheckCircle2, Circle, Loader2, Rocket } from "lucide-react";
-import { User } from "@firebase/auth/web-extension";
+import { User } from "firebase/auth";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
 

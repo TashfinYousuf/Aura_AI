@@ -1,0 +1,31 @@
+{
+  "subject": {
+    "identity_token": "aura_character",
+    "gender": "female",
+    "age": 22,
+    "ethnicity": "Caucasian Slavic",
+    "hair": "long natural brunette with subtle honey highlights, slightly messy texture",
+    "eyes": "hazel-brown almond-shaped eyes, natural depth",
+    "facial_structure": "delicate jawline, soft high cheekbones, natural nose bridge",
+    "skin_texture": "fair natural skin, visible pores, zero airbrushed smoothing, natural light reflection"
+  },
+  "aesthetic_rules": {
+    "camera_feel": "raw candid smartphone front camera selfie, 35mm lens, slight natural sensor noise, natural room lighting",
+    "banned_style_tokens": [
+      "porcelain skin",
+      "flawless skin",
+      "doll face",
+      "airbrushed",
+      "beauty filter",
+      "3d render",
+      "cgi",
+      "illustration",
+      "anime",
+      "plastic look"
+    ]
+  },
+  "qa_thresholds": {
+    "min_face_confidence": 0.85,
+    "max_acceptable_drift": 0.35
+  }
+}

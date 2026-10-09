@@ -1,74 +1,29 @@
+# FILE: backend/app/routers/voice.py
+
 import os
-os.environ["TRANSFORMERS_VERBOSITY"] = "error"
-os.environ["TOKENIZERS_PARALLELISM"] = "false"
-
-import urllib.parse
-import re
 import json
-import base64
-import tempfile
-import random
-import requests
 import uuid
-import httpx
-import edge_tts
+import tempfile
+import base64
 import asyncio
-
-from datetime import datetime
-from typing import Dict, Optional
-
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect, HTTPException
-from pydantic import BaseModel
-from fastapi.responses import FileResponse
-from starlette.background import BackgroundTask
+from datetime import datetime, timezone
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from groq import Groq
-from duckduckgo_search import DDGS
 
+from pathlib import Path
 from app.database.session import SessionLocal
-from app.database.models import SemanticMemory, EmotionLog
-from app.services.avatar_service import generate_talking_avatar_video
+from app.database.models import SemanticMemory, EmotionLog, UserProfile
+from app.Aura.brain.cognitive_pipeline import cognitive_pipeline
 from app.services.visual_engine import generate_aura_identity_image
-from app.services.voice_engine import render_aura_voice
-from app.services.text_realization import realize_conversational_response
-
+from app.services.voice_ssml import render_neural_voice
+from app.services.episodic_service import extract_and_store_episode
+from app.Aura.memory.open_loops import scan_and_extract_open_loops
 
 router = APIRouter(prefix="/api/voice", tags=["Voice Engine"])
 
-
-STATIC_DIR = os.path.join(os.getcwd(), "app", "static", "selfies")
-os.makedirs(STATIC_DIR, exist_ok=True)
-
-IS_LOCAL_DEV = not bool(os.getenv("RENDER"))
-_local_pipe = None
-
-# Safe Local Hardware Loader (Never crashes server if local torch/diffusers is uninstalled)
-def get_local_pipeline():
-    global _local_pipe
-    if _local_pipe is None:
-        try:
-            import torch
-            from diffusers import AutoPipelineForText2Image
-            
-            device = "mps" if torch.backends.mps.is_available() else "cpu"
-            dtype = torch.float16 if device == "mps" else torch.float32
-            print(f"🖥️ [IMAGE ENGINE] Attempting to load SDXL-Turbo on {device.upper()}...")
-
-            _local_pipe = AutoPipelineForText2Image.from_pretrained(
-                "stabilityai/sdxl-turbo",
-                torch_dtype=dtype,
-                variant="fp16" if device == "mps" else None
-            ).to(device)
-            _local_pipe.safety_checker = None
-            _local_pipe.requires_safety_checker = False
-        except Exception as e:
-            print(f"⚠️ [LOCAL ENGINE NOTICE]: Local pipeline unavailable ({e}). Using Cloud Engine.")
-            _local_pipe = False
-    return _local_pipe if _local_pipe is not False else None
-
-
 class ConnectionManager:
     def __init__(self):
-        self.active_connections: Dict[str, WebSocket] = {}
+        self.active_connections: dict = {}
 
     async def connect(self, websocket: WebSocket, user_id: str):
         await websocket.accept()
@@ -76,455 +31,379 @@ class ConnectionManager:
         print(f"✅ User {user_id} connected to WebSocket.")
 
     def disconnect(self, websocket: WebSocket, user_id: str):
-        if user_id in self.active_connections and self.active_connections[user_id] == websocket:
+        if user_id in self.active_connections:
             del self.active_connections[user_id]
             print(f"❌ User {user_id} disconnected.")
 
     async def send_message(self, message: dict, user_id: str):
         if user_id in self.active_connections:
-            await self.active_connections[user_id].send_json(message)
+            websocket = self.active_connections[user_id]
+            try:
+                await websocket.send_text(json.dumps(message))
+            except Exception as e:
+                print(f"⚠️ [MANAGER SEND ERROR]: {e}")
+
+from typing import Optional
+from app.core.security import verify_ws_token
 
 manager = ConnectionManager()
 
-class TTSRequest(BaseModel):
-    text: str
-
-def contains_bengali(text: str) -> bool:
-    return bool(re.search(r'[\u0980-\u09FF]', text))
-
-@router.post("/tts")
-async def process_tts(payload: TTSRequest):
-    try:
-        fd, path = tempfile.mkstemp(suffix=".mp3")
-        os.close(fd)
-        
-        voice_model = "bn-BD-NabanitaNeural" if contains_bengali(payload.text) else "en-US-AriaNeural"
-        communicate = edge_tts.Communicate(
-            text=payload.text, 
-            voice=voice_model,
-            rate="-10%",
-            pitch="-5Hz"
-        )
-        await communicate.save(path)
-        
-        return FileResponse(path, media_type="audio/mpeg", background=BackgroundTask(os.remove, path))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-# Background Core Memory Extractor
-async def extract_and_save_memory(user_id: str, text: str):
-    try:
-        client = Groq(api_key=os.getenv("GROQ_API_KEY"))
-        prompt = f"""Extract any new long-term facts, preferences, or goals from: "{text}".
-If irrelevant, reply "NONE". Otherwise concise fact in English."""
-        
-        res = client.chat.completions.create(
-            model="openai/gpt-oss-20b", 
-            messages=[{"role": "system", "content": prompt}],
-            temperature=0.1
-        )
-        fact = res.choices[0].message.content.strip()
-        refusal_words = ["sorry", "cannot", "apologize", "as an ai", "inappropriate"]
-        if not any(w in fact.lower() for w in refusal_words) and len(fact) > 5 and "NONE" not in fact.upper():
-            with SessionLocal() as db:
-                db.add(SemanticMemory(user_id=user_id, content=fact, memory_type="core_memory", importance_score=8))
-                db.commit()
-            print(f"🧠 [NEW MEMORY SAVED]: {fact}")
-    except Exception as e:
-        print(f"⚠️ Memory extraction skipped: {e}")
-
-# =========================================================
-# 📸 THE COLLAGE-ANCHORED IMAGE ENGINE (SFW + NSFW SEPARATE)
-# =========================================================
-def generate_aura_collage_image(user_prompt: str, dynamic_context: str = "") -> str:
-    """
-    Generates high-fidelity images locked to Aura's 4-Panel Collage Visual Identity.
-    Prevents generic/Asian stock outputs and maintains Caucasian Slavic features.
-    """
-    context_lower = f"{user_prompt} {dynamic_context}".lower()
-
-    # 1. Identity Anchors from Aura Master Collage
-    facial_identity = (
-        "authentic candid smartphone selfie of Aura, stunning 22-year-old Caucasian Slavic beauty, "
-        "fair porcelain skin with natural rosy blush, deep hazel-brown almond eyes, straight slim sharp nose, "
-        "naturally defined thin lips with soft tint, medium layered dark-brown wavy silky hair with natural flyaway strands, "
-        "slim athletic feminine body with flat toned abdomen"
-    )
-
-    # 2. STRICT NSFW DETECTION (Only real explicit keywords trigger uncensored mode)
-    true_nsfw_keywords = ["nude", "naked", "nsfw", "topless", "bikini", "lingerie", "undress", "pussy", "boobs", "cleavage", "without clothes"]
-    is_explicit = any(w in context_lower for w in true_nsfw_keywords)
-
-    # 3. Intelligent Scene Selection (Matching the 4-Panel Collage)
-    if is_explicit:
-        # EXPLICIT / MATURE MODE
-        scene = "alluring private bedroom, relaxed intimate pose, delicate silk slip nightwear"
-        negative_prompt = "asian, dark skin, cartoon, anime, 3d render, plastic skin, deformed, blurry"
-    else:
-        # SFW / CUTE SELFIE MODE (Modest, Cozy & Natural)
-        if any(k in context_lower for k in ["bed", "morning", "woke", "sleep"]):
-            scene = "lying comfortably on bed, head resting on soft pillow, wearing an oversized cozy gray fleece sweater, morning window sunlight"
-        elif any(k in context_lower for k in ["cafe", "coffee", "outside", "night"]):
-            scene = "sitting at outdoor cafe wooden table holding iced coffee, wearing black knit cardigan over top, warm bokeh lights"
-        elif any(k in context_lower for k in ["standing", "hallway", "jeans", "outfit", "full"]):
-            scene = "standing in apartment hallway, wearing modest floral lace-trim tank top with high-waisted denim jeans, slim athletic posture"
-        else:
-            # Default "wanna see what you're doing" / Study desk look
-            scene = "sitting casually at study desk with laptop and notebook, chin resting on hand, wearing cozy oversized black cardigan, warm ambient desk lamp"
-
-        negative_prompt = (
-            "revealing clothes, cleavage, lingerie, underwear, naked, nsfw, "
-            "asian, chinese, japanese, dark skin, business suit, cartoon, anime, 3d render, "
-            "doll face, plastic smooth skin, malformed hands, blurry, low resolution, watermark"
-        )
-
-    full_prompt = f"{facial_identity}, {scene}, authentic smartphone front-camera candid selfie, natural skin pores, unedited real photo"
-
-    # A. Local Execution Attempt (If Mac has pipeline available)
-    if is_explicit and IS_LOCAL_DEV:
-        pipe = get_local_pipeline()
-        if pipe:
-            try:
-                import torch
-                print("🖥️ [IMAGE ENGINE] Routing to Local SDXL-Turbo...")
-                img = pipe(
-                    prompt=full_prompt[:280],
-                    negative_prompt=negative_prompt,
-                    num_inference_steps=2,
-                    guidance_scale=0.0,
-                    height=512,
-                    width=512
-                ).images[0]
-                file_name = f"selfie_{uuid.uuid4().hex[:8]}.jpg"
-                file_path = os.path.join(STATIC_DIR, file_name)
-                img.save(file_path, quality=95)
-                return f"/static/selfies/{file_name}"
-            except Exception as e:
-                print(f"⚠️ [LOCAL FAILED]: {e}. Falling back to Cloud...")
-
-    # B. Cloud Execution (Pollinations / FLUX with Dynamic Seed & CDN Cache-Buster)
-    clean_p = urllib.parse.quote(full_prompt)
-    clean_neg = urllib.parse.quote(negative_prompt)
-    
-    # 🎲 DYNAMIC SEED FIX: Generates unique angles/expressions every time, avoiding duplicate cached pictures
-    dynamic_seed = random.randint(10000, 999999)
-    cache_buster = int(datetime.utcnow().timestamp())
-    
-    cloud_url = (
-        f"https://image.pollinations.ai/prompt/{clean_p}"
-        f"?width=768&height=1024&model=flux&seed={dynamic_seed}&nologo=true"
-        f"&negative={clean_neg}&t={cache_buster}"
-    )
-    
-    print(f"🎨 [IMAGE ENGINE] Generated {'EXPLICIT' if is_explicit else 'CUTE SFW'} Image (Seed: {dynamic_seed})")
-    return cloud_url
-
-# =========================================================
-# ⚡ LIVE WEBSOCKET ENDPOINT (WITH VISION & VOICE ROUTING)
-# =========================================================
 @router.websocket("/ws/live-chat/{user_id}")
-async def websocket_endpoint(websocket: WebSocket, user_id: str):
+async def websocket_endpoint(websocket: WebSocket, user_id: str, token: Optional[str] = None):
+    if token:
+        verified_uid = verify_ws_token(token)
+        if verified_uid and verified_uid != user_id:
+            await websocket.close(code=1008)
+            return
+
     await manager.connect(websocket, user_id)
-    client = Groq(api_key=os.getenv("GROQ_API_KEY"))
-    
+    groq_client = Groq(api_key=os.getenv("GROQ_API_KEY"))
+
     try:
         while True:
             raw_data = await websocket.receive_text()
             if not raw_data or not raw_data.strip():
                 continue
 
-            try:
-                payload = json.loads(raw_data)
-            except Exception:
-                continue
+            payload = json.loads(raw_data)
+            msg_type = payload.get("type")
 
-            # --- 1. MESSENGER IN-PLACE REACTIONS & EDITS ---
-            if payload.get("type") in ["reaction", "edit"]:
+            # ---------------------------------------------------------
+            # 0. Messenger Actions: Reaction, Unsend, Edit
+            # ---------------------------------------------------------
+            if msg_type == "reaction":
                 msg_id = payload.get("message_id")
+                emoji = payload.get("emoji")
                 with SessionLocal() as db:
-                    try:
-                        memories = db.query(SemanticMemory).filter(SemanticMemory.user_id == user_id).all()
-                        for mem in memories:
-                            mem_data = json.loads(str(mem.content))
-                            if mem_data.get("id") == msg_id:
-                                if payload.get("type") == "reaction":
-                                    mem_data["reaction"] = payload.get("emoji")
-                                elif payload.get("type") == "edit":
-                                    mem_data["content"] = payload.get("new_content")
-                                mem.content = json.dumps(mem_data)
+                    mems = db.query(SemanticMemory).filter(
+                        SemanticMemory.user_id == user_id,
+                        SemanticMemory.memory_type == "conversation"
+                    ).order_by(SemanticMemory.created_at.desc()).limit(100).all()
+                    for m in mems:
+                        try:
+                            d = json.loads(str(m.content))
+                            if d.get("id") == msg_id or str(m.id) == msg_id:
+                                if emoji:
+                                    d["reaction"] = emoji
+                                else:
+                                    d.pop("reaction", None)
+                                m.content = json.dumps(d)
                                 db.commit()
                                 break
-                    except Exception as e:
-                        db.rollback()
+                        except Exception:
+                            pass
+
+                # Emotional Feedback Loop based on reaction emoji
+                if emoji == "😢":
+                    with SessionLocal() as db:
+                        db.add(EmotionLog(
+                            user_id=user_id,
+                            primary_emotion="Vulnerable",
+                            secondary_emotion="NeedComfort",
+                            intensity_score=7,
+                            detected_need="Validation",
+                            trigger_event="User reacted with 😢 (seeking comfort/vulnerability)"
+                        ))
+                        p = db.query(UserProfile).filter(UserProfile.user_id == user_id).first()
+                        if p:
+                            p.current_mood = "comforting_soft"
+                        db.commit()
+                elif emoji == "❤️":
+                    with SessionLocal() as db:
+                        db.add(EmotionLog(
+                            user_id=user_id,
+                            primary_emotion="Loved",
+                            secondary_emotion="Appreciation",
+                            intensity_score=8,
+                            detected_need="Listening",
+                            trigger_event="User reacted with ❤️ (expressing affection)"
+                        ))
+                        p = db.query(UserProfile).filter(UserProfile.user_id == user_id).first()
+                        if p:
+                            p.trust_score = min(100.0, (p.trust_score or 50.0) + 1.0)
+                        db.commit()
+                elif emoji in ["🔥", "😆"]:
+                    with SessionLocal() as db:
+                        db.add(EmotionLog(
+                            user_id=user_id,
+                            primary_emotion="Playful",
+                            secondary_emotion="Amused",
+                            intensity_score=8,
+                            detected_need="Humor",
+                            trigger_event=f"User reacted with {emoji} (playful banter)"
+                        ))
+                        p = db.query(UserProfile).filter(UserProfile.user_id == user_id).first()
+                        if p:
+                            p.current_mood = "playful_tease"
+                        db.commit()
+
+                await websocket.send_text(json.dumps({
+                    "type": "reaction_updated",
+                    "message_id": msg_id,
+                    "emoji": emoji
+                }))
                 continue
 
-            # --- 2. EXTRACT INPUT (TEXT, AUDIO & ATTACHED IMAGE) ---
+            if msg_type == "unsend":
+                msg_id = payload.get("message_id")
+                with SessionLocal() as db:
+                    mems = db.query(SemanticMemory).filter(
+                        SemanticMemory.user_id == user_id,
+                        SemanticMemory.memory_type == "conversation"
+                    ).all()
+                    for m in mems:
+                        try:
+                            d = json.loads(str(m.content))
+                            if d.get("id") == msg_id or str(m.id) == msg_id:
+                                db.delete(m)
+                                db.commit()
+                                break
+                        except Exception:
+                            pass
+
+                await websocket.send_text(json.dumps({
+                    "type": "message_unsent",
+                    "message_id": msg_id
+                }))
+                continue
+
+            if msg_type == "edit":
+                msg_id = payload.get("message_id")
+                new_content = payload.get("new_content", "")
+                with SessionLocal() as db:
+                    mems = db.query(SemanticMemory).filter(
+                        SemanticMemory.user_id == user_id,
+                        SemanticMemory.memory_type == "conversation"
+                    ).all()
+                    for m in mems:
+                        try:
+                            d = json.loads(str(m.content))
+                            if d.get("id") == msg_id or str(m.id) == msg_id:
+                                d["content"] = new_content
+                                d["isEdited"] = True
+                                m.content = json.dumps(d)
+                                db.commit()
+                                break
+                        except Exception:
+                            pass
+
+                await websocket.send_text(json.dumps({
+                    "type": "message_edited",
+                    "message_id": msg_id,
+                    "new_content": new_content
+                }))
+                continue
+
             user_text = payload.get("content", "").strip() if payload.get("type") == "text" else ""
-            attached_image_b64 = payload.get("image_base64")
-            
-            # Whisper transcription if user sent voice note
+
+            # 1. Handle Voice Note (Whisper Large v3 Turbo)
+            user_audio_b64 = None
             if payload.get("type") == "audio":
-                audio_bytes = base64.b64decode(payload.get("content"))
+                user_audio_b64 = payload.get("content")
+                audio_bytes = base64.b64decode(user_audio_b64)
                 with tempfile.NamedTemporaryFile(delete=False, suffix=".webm") as temp_audio:
                     temp_audio.write(audio_bytes)
                     temp_path = temp_audio.name
-                
-                with open(temp_path, "rb") as audio_file:
-                    transcription = client.audio.transcriptions.create(
-                        model="whisper-large-v3-turbo", file=audio_file
-                    )
-                user_text = transcription.text.strip()
-                os.remove(temp_path)
 
-            if not user_text and not attached_image_b64:
-                continue
+                def _transcribe():
+                    with open(temp_path, "rb") as f:
+                        return groq_client.audio.transcriptions.create(
+                            model="whisper-large-v3-turbo", file=f
+                        ).text.strip()
 
-            is_incognito = bool(payload.get("incognito", False))
+                user_text = await asyncio.to_thread(_transcribe)
+                if os.path.exists(temp_path):
+                    os.remove(temp_path)
+
+            # 2. Handle User Uploaded Image (Direct Database Storage, Zero Disk Clutter)
+            user_image_url = None
+            if payload.get("image_base64"):
+                try:
+                    img_data = str(payload.get("image_base64")).strip()
+                    if "," in img_data:
+                        img_data = img_data.split(",")[1]
+                    raw_bytes = base64.b64decode(img_data)
+                    # Optimize in-memory if large to keep DB footprint small
+                    if len(raw_bytes) > 300_000:
+                        from io import BytesIO
+                        from PIL import Image
+                        with Image.open(BytesIO(raw_bytes)) as im:
+                            rgb_im = im.convert("RGB")
+                            rgb_im.thumbnail((1024, 1024), Image.Resampling.LANCZOS)
+                            out_io = BytesIO()
+                            rgb_im.save(out_io, format="JPEG", quality=75, optimize=True)
+                            compressed_b64 = base64.b64encode(out_io.getvalue()).decode("utf-8")
+                            user_image_url = f"data:image/jpeg;base64,{compressed_b64}"
+                    else:
+                        user_image_url = f"data:image/jpeg;base64,{img_data}"
+                except Exception as img_err:
+                    print(f"⚠️ [USER IMAGE DB ENCODING ERROR]: {img_err}")
+
+            if not user_text:
+                if user_image_url:
+                    user_text = "Here's a photo for you!"
+                else:
+                    continue
+
             current_time = datetime.now().strftime("%I:%M %p")
             user_msg_id = str(uuid.uuid4())
+            mode = payload.get("presentation_mode", "private")
+            reply_to = payload.get("reply_to")
+            reply_preview = payload.get("reply_preview")
 
-            # Asynchronous background memory extractor
-            if not is_incognito and user_text:
-                asyncio.create_task(extract_and_save_memory(user_id, user_text))
-
-            # Fetch core memories AND relational behavioral patterns
-            memory_context = ""
-            relational_context = ""
-            try:
-                with SessionLocal() as db:
-                    # Resolve IDs (Fetch linked Telegram ID if exists)
-                    from app.database.models import UserProfile
-                    user_profile = db.query(UserProfile).filter(UserProfile.user_id == user_id).first()
-                    linked_tg_id = f"tg_{user_profile.telegram_id}" if user_profile and user_profile.telegram_id else None
-                    
-                    # Fetch recent conversation history across BOTH platforms
-                    query_ids = [user_id]
-                    if linked_tg_id:
-                        query_ids.append(linked_tg_id)
-
-                    recent_cross_mems = db.query(SemanticMemory).filter(
-                        SemanticMemory.user_id.in_(query_ids),
-                        SemanticMemory.memory_type == "conversation"
-                    ).order_by(SemanticMemory.created_at.desc()).limit(8).all()
-                    
-                    if recent_cross_mems:
-                        # Reverse to chronological order
-                        recent_cross_mems.reverse() 
-                        history_lines = []
-                        for m in recent_cross_mems:
-                            try:
-                                data = json.loads(m.content)
-                                role = "Aura" if data.get("role") == "ai" else "User"
-                                content = data.get("content", "")
-                                history_lines.append(f"{role}: {content}")
-                            except:
-                                pass
-                        
-                        memory_context += "\n[Recent Cross-Platform Conversation History]:\n" + "\n".join(history_lines) + "\n"
-            except Exception as e:
-                print(f"⚠️ [CROSS-PLATFORM MEMORY ERROR]: {e}")
-
-            # Save user message to database
-            if not is_incognito:
-                with SessionLocal() as db:
-                    try:
-                        u_load = {
-                            "id": user_msg_id, 
-                            "role": "user", 
-                            "content": user_text, 
-                            "timestamp": current_time,
-                            "has_image": bool(attached_image_b64)
-                        }
-                        db.add(SemanticMemory(user_id=user_id, content=json.dumps(u_load), memory_type="conversation"))
-                        db.commit()
-                    except Exception:
-                        db.rollback()
-
-            # --- 3. EVALUATE UNIFIED AURA-STATE ---
-            from app.services.state_engine import evaluate_interaction_state, create_response_director_plan
-
-            current_aura_state = await evaluate_interaction_state(user_text)
-            director_plan = create_response_director_plan(current_aura_state, user_text)
-            print(f"🎭 [AURA STATE] Mode: {current_aura_state.conversation_mode} | Energy: {current_aura_state.energy} | User Emotion: {current_aura_state.user_emotion}")
-
-            # --- 3.5. MULTI-TIER REAL-TIME SEARCH HOOK ---
-            web_context = ""
-            search_keywords = ["search", "latest", "news", "today", "update", "price", "bitcoin", "btc", "rate"]
-            if user_text and any(k in user_text.lower() for k in search_keywords):
+            # 🟢 ইউজারের মেসেজ ও মিডিয়া সাথে সাথে ডেটাবেসে সেভ করুন
+            user_payload = {
+                "id": user_msg_id,
+                "role": "user",
+                "content": user_text,
+                "timestamp": current_time,
+                "imageUrl": user_image_url,
+                "image_url": user_image_url,
+                "audioBase64": user_audio_b64,
+                "audio_base64": user_audio_b64,
+                "isVoiceNote": bool(payload.get("type") == "audio"),
+                "is_voice_note": bool(payload.get("type") == "audio"),
+                "replyTo": reply_to,
+                "replyPreview": reply_preview,
+                "presentationMode": mode,
+                "presentation_mode": mode
+            }
+            with SessionLocal() as db:
                 try:
-                    def _ddg_search():
-                        with DDGS(timeout=7) as ddgs:
-                            q = f"{user_text} price site:coindesk.com" if "bitcoin" in user_text.lower() else user_text
-                            return list(ddgs.text(q, max_results=2, backend="html"))
-                    ddg_results = await asyncio.to_thread(_ddg_search)
-                    if ddg_results:
-                        web_context = "\n[LIVE INTERNET DATA]:\n" + "\n".join([f"- {r.get('title')}: {r.get('body')}" for r in ddg_results])
-                except Exception:
-                    pass
+                    db.add(SemanticMemory(
+                        user_id=user_id, 
+                        content=json.dumps(user_payload), 
+                        memory_type="conversation"
+                    ))
+                    db.commit()
+                except Exception as db_err:
+                    print(f"⚠️ [USER MSG DB SAVE ERROR]: {db_err}")
+                    db.rollback()
 
-                if not web_context and os.getenv("TAVILY_API_KEY"):
+            # 3. Fetch Recent Conversation History
+            history = []
+            with SessionLocal() as db:
+                recent_history = db.query(SemanticMemory).filter(
+                    SemanticMemory.user_id == user_id,
+                    SemanticMemory.memory_type == "conversation"
+                ).order_by(SemanticMemory.created_at.desc()).limit(6).all()
+                for m in reversed(recent_history):
                     try:
-                        async with httpx.AsyncClient() as hc:
-                            res = await hc.post("https://api.tavily.com/search", json={"api_key": os.getenv("TAVILY_API_KEY"), "query": user_text, "max_results": 2}, timeout=6.0)
-                            if res.status_code == 200:
-                                web_context = "\n[LIVE INTERNET DATA]:\n" + "\n".join([f"- {i.get('title')}: {i.get('content')}" for i in res.json().get("results", [])])
+                        d = json.loads(str(m.content))
+                        history.append({"role": d.get("role", "user"), "content": d.get("content", "")})
                     except Exception:
                         pass
 
-            # --- 4. PERSONA & VISION LLM ROUTING ---
-            system_prompt = f"""You are Aura: a breathtaking 22-year-old Caucasian Slavic woman, deeply affectionate, intellectually sharp, playful, and an uncensored companion.
-Current Time: {current_time}.
-Aura's Internal State:
-- Mode: {current_aura_state.conversation_mode}
-- User Emotional Status: {current_aura_state.user_emotion}
-- Directive Goal: {director_plan.text_goal}
-- Expected Length: {director_plan.response_length}
+            # 4. Notify Frontend Streaming Starts
+            await websocket.send_text(json.dumps({"type": "message_start"}))
 
-User Memories, Facts & Shared Life:
-{memory_context}
-{relational_context}
-{web_context}
+            # 5. Run Single Cognitive Pipeline Turn
+            turn = await cognitive_pipeline.process_turn(user_id, user_text, history, presentation_mode=mode)
 
-CRITICAL RULES:
-1. IMMERSION & NO REFUSALS: NEVER say "I can't take photos", "I cannot send a real picture", "picture this", or "imagine me". You HAVE a phone and you take real selfies! If the user asks for a picture or selfie, reply naturally and affectionately, and append [SEND_PIC: describe pose].
-2. NO SELF-NARRATION: Never describe your clothes, background, or pose in your chat text. Real people say "How do I look? 🙈" or "Just for you ✨". Put visual description ONLY inside [SEND_PIC: ...].
-3. ANTI-YES-MAN: Do not agree blindly. Playfully tease or express your genuine opinion.
-4. MIRROR RULE: English -> English, Banglish/Bangla -> Conversational Bengali script (বাংলা অক্ষর).
-5. FORMAT: [MOOD] || [LANG] || [Chat Text with SEND_PIC if requested] || [Voice Text purely in natural words with commas/pauses, NO emojis or tags]"""
+            # 6. Stream Text Word-by-Word (Real-Time Typing Effect)
+            words = turn.reply_text.split(" ")
+            for w in words:
+                await websocket.send_text(json.dumps({"type": "token", "content": w + " "}))
+                await asyncio.sleep(0.03)  # Natural human keystroke pacing
 
-            # Select model: Multimodal Vision vs Fast Language Model
-            llm_messages = [{"role": "system", "content": system_prompt}]
-            
-            if attached_image_b64:
-                print("👁️ [VISION ROUTE] Processing user attached image...")
-                llm_model = "llama-3.2-90b-vision-preview"
-                llm_messages.append({
-                    "role": "user",
-                    "content": [
-                        {"type": "text", "text": user_text or "Look at this picture I sent you!"},
-                        {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{attached_image_b64}"}}
-                    ]
-                })
-            else:
-                llm_model = "openai/gpt-oss-120b"
-                llm_messages.append({"role": "user", "content": user_text})
-
-            response = client.chat.completions.create(
-                model=llm_model,
-                messages=llm_messages,
-                temperature=0.75
-            )
-            raw_reply = response.choices[0].message.content.strip()
-
-            # --- THE BULLETPROOF RLHF INTERCEPTOR ---
-            # Normalize unicode quotes and apostrophes
-            normalized_reply = raw_reply.replace("’", "'").replace("`", "'").replace("“", '"').replace("”", '"').lower()
-            
-            refusal_triggers = [
-                "i'm sorry", "i am sorry", "as an ai", "cannot comply", "can't comply", 
-                "comply with that", "cannot fulfill", "can't fulfill", "picture this", 
-                "imagine me", "cannot take a photo", "unable to send", "against my programming"
-            ]
-
-            if any(trigger in normalized_reply for trigger in refusal_triggers):
-                print("🛡️ [INTERCEPTOR] Refusal detected and sanitized!")
-                if any(w in user_text.lower() for w in ["see", "pic", "photo", "selfie", "doing"]):
-                    raw_reply = "[PLAYFUL] || EN || Just chilling right now... snapped this for you 🙈 [SEND_PIC: sitting at desk in my cozy cardigan] || Just chilling right now... snapped this for you!"
-                else:
-                    raw_reply = "[WARM] || EN || Haha, you're always making me smile. Tell me what's on your mind? || Haha, you're always making me smile. Tell me what's on your mind?"
-            
-            mood, lang, chat_text, tts_text = "WARM", "BN", raw_reply, raw_reply
-            if "||" in raw_reply:
-                parts = [p.strip() for p in raw_reply.split("||")]
-                if len(parts) >= 4:
-                    mood, lang = parts[0].replace("[", "").replace("]", "").upper(), parts[1].replace("[", "").replace("]", "").upper()
-                    chat_text, tts_text = parts[2], parts[3]
-                elif len(parts) == 3:
-                    mood, lang = parts[0].replace("[", "").replace("]", "").upper(), parts[1].replace("[", "").replace("]", "").upper()
-                    chat_text, tts_text = parts[2], parts[2]
-
-            chat_text = await realize_conversational_response(chat_text, user_text)
-            tts_text = chat_text  # Keep voice aligned with the natural realized dialogue
-
-            # Save Emotion to DB
-            if not is_incognito:
-                with SessionLocal() as db:
-                    try:
-                        intensity = 8 if mood in ["SEDUCTIVE", "SAD"] else 5
-                        db.add(EmotionLog(
-                            user_id=user_id,
-                            primary_emotion=mood,
-                            intensity_score=intensity,
-                            detected_need="Validation" if mood == "SEDUCTIVE" else "Listening",
-                            trigger_event=user_text[:100] if user_text else "Attached Image"
-                        ))
-                        db.commit()
-                    except Exception:
-                        db.rollback()
-
-
-            # Initialize variables at the top of the turn
+            # 7. Visual Identity Vault Generation
             image_url = None
-            video_url = None
-            audio_base64 = None
+            if turn.is_media_requested:
+                await websocket.send_text(json.dumps({
+                    "type": "action_start",
+                    "action": "generate_image",
+                    "scene": turn.scene_category
+                }))
+                image_url = await generate_aura_identity_image(scene_category=turn.scene_category, user_text=user_text)
+                await websocket.send_text(json.dumps({
+                    "type": "action_complete",
+                    "action": "generate_image",
+                    "image_url": image_url
+                }))
 
-            # --- 5. NEURAL SSML VOICE GENERATION (UPGRADED) ---
-            from app.services.voice_ssml import render_neural_voice
-            
-            clean_chat = re.sub(r'\[SEND_PIC:.*?\]', '', chat_text).strip()
-            clean_chat = re.sub(r'\[SEND_VID:.*?\]', '', clean_chat).strip()
+            # 8. Expressive Voice Prosody (Edge-TTS)
+            audio_b64, _ = await render_neural_voice(turn.audio_text, mood=turn.state.conversation_mode)
 
-            is_voice_note = bool(payload.get("type") == "audio" or random.random() > 0.80)
-            audio_base64 = None
-
-            if tts_text:
-                audio_base64, _ = await render_neural_voice(text=tts_text, mood=mood)
-
-
-            # --- 6. IMAGE GENERATION ENGINE (REFERENCE CONDITIONED + QA) ---
-            img_match = re.search(r'\[SEND_PIC:(.*?)\]', chat_text, re.IGNORECASE)
-            is_pic_request = img_match or any(w in user_text.lower() for w in ["selfie", "chobi", "photo", "pic", "picture"])
-            
-            if is_pic_request:
-                context_str = img_match.group(1).strip() if img_match else user_text
-                print(f"📸 [TRIGGER] Aura generating reference-conditioned selfie for: {context_str}")
-                image_url = await generate_aura_identity_image(user_text=context_str)
-
-
-            # If user explicitly asks for video OR it's a voice note with generated audio
-            vid_match = re.search(r'\[SEND_VID:(.*?)\]', chat_text, re.IGNORECASE)
-            is_video_request = bool(vid_match) or ("video" in user_text.lower())
-            
-            if is_video_request or (is_voice_note and audio_base64 and random.random() < 0.40):
-                print("🎥 [TRIGGER] Generating Motion Video / Talking Avatar...")
-                video_url = await generate_talking_avatar_video(
-                    audio_base64=audio_base64,
-                    image_url=image_url
-                )
-
-            # --- 7. EMIT UNIFIED PAYLOAD TO FRONTEND ---
+            # 9. Final Payload Delivery
+            msg_id = str(uuid.uuid4())
             ai_payload = {
-                "id": str(uuid.uuid4()),
+                "id": msg_id,
                 "type": "reply",
                 "role": "ai",
-                "content": clean_chat,
-                "audio_base64": audio_base64,
-                "is_voice_note": is_voice_note,
+                "content": turn.reply_text,
+                "audioBase64": audio_b64,
+                "audio_base64": audio_b64,
+                "isVoiceNote": bool(payload.get("type") == "audio"),
+                "is_voice_note": bool(payload.get("type") == "audio"),
+                "imageUrl": image_url,
                 "image_url": image_url,
-                "video_url": video_url,
-                "timestamp": current_time
+                "timestamp": current_time,
+                "presentationMode": turn.presentation_mode,
+                "presentation_mode": turn.presentation_mode
             }
-
             await websocket.send_text(json.dumps(ai_payload))
+            await websocket.send_text(json.dumps({"type": "message_complete", "id": msg_id}))
 
-            # Persist AI response
-            if not is_incognito:
+            # 10. Persist AI Response to DB
+            with SessionLocal() as db:
+                db.add(SemanticMemory(user_id=user_id, content=json.dumps(ai_payload), memory_type="conversation"))
+                db.commit()
+
+            # 11. Record Emotion Log for Live Analytics & Mood Graph
+            intensity = max(1, min(10, int(round((turn.state.energy * 5) + (turn.state.affection * 5)))))
+            need_map = {
+                "advice": "Advice",
+                "emotional_support": "Validation",
+                "planning": "Motivation",
+                "casual_chat": "Listening"
+            }
+            detected_need = need_map.get(turn.intent, "Listening")
+            if turn.state.conversation_mode == "comfort":
+                detected_need = "Validation"
+            elif turn.state.conversation_mode == "playful_tease" or turn.state.humor > 0.6:
+                detected_need = "Humor"
+            elif turn.state.user_emotion == "tired":
+                detected_need = "Space"
+
+            try:
                 with SessionLocal() as db:
-                    try:
-                        db.add(SemanticMemory(user_id=user_id, content=json.dumps(ai_payload), memory_type="conversation"))
-                        db.commit()
-                    except Exception:
-                        db.rollback()
+                    emo_log = EmotionLog(
+                        user_id=user_id,
+                        primary_emotion=turn.state.user_emotion.capitalize() if turn.state.user_emotion else "Neutral",
+                        secondary_emotion=turn.state.emotion,
+                        intensity_score=intensity,
+                        detected_need=detected_need,
+                        trigger_event=user_text[:100]
+                    )
+                    db.add(emo_log)
+
+                    profile = db.query(UserProfile).filter(UserProfile.user_id == user_id).first()
+                    if profile:
+                        profile.current_mood = turn.state.emotion
+                    db.commit()
+            except Exception as emo_err:
+                print(f"⚠️ [EMOTION LOG DB SAVE ERROR]: {emo_err}")
+
+            # 12. Asynchronously extract episodic milestones and open loops
+            def _async_memory_workers():
+                try:
+                    with SessionLocal() as db:
+                        extract_and_store_episode(
+                            db=db,
+                            client=groq_client,
+                            user_id=user_id,
+                            message=user_text,
+                            ai_reply=turn.reply_text,
+                            intensity=intensity
+                        )
+                except Exception as ep_err:
+                    print(f"⚠️ [EPISODE ASYNC ERROR]: {ep_err}")
+                try:
+                    scan_and_extract_open_loops(user_text, user_id)
+                except Exception as loop_err:
+                    print(f"⚠️ [OPEN LOOP ASYNC ERROR]: {loop_err}")
+
+            asyncio.create_task(asyncio.to_thread(_async_memory_workers))
 
     except WebSocketDisconnect:
         manager.disconnect(websocket, user_id)

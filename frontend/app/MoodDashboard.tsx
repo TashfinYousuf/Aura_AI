@@ -7,7 +7,7 @@ import {
   RadarChart, PolarGrid, PolarAngleAxis, Radar 
 } from "recharts";
 import { Loader2, BrainCircuit, Activity, HeartPulse } from "lucide-react";
-import { User } from "firebase/auth/web-extension";
+import { User } from "firebase/auth";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
 
@@ -41,7 +41,7 @@ export default function MoodDashboard({ currentUser }: { currentUser: User }) {
   }
 
   // 🛠️ Optional Chaining (?.) ব্যবহার করে ক্র্যাশ রোধ করা হলো
-  if (!data?.timeline || data.timeline.length < 0) {
+  if (!data.timeline || data.timeline.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center h-48 bg-gray-900/60 backdrop-blur-md rounded-2xl border border-gray-800 shadow-lg text-center p-6">
         <BrainCircuit className="w-8 h-8 text-indigo-500/50 mb-3" />
@@ -103,7 +103,7 @@ export default function MoodDashboard({ currentUser }: { currentUser: User }) {
         </div>
       </div>
 
-      <div className="md:col-span-2 bg-gradient-to-r from-indigo-900/40 to-purple-900/40 p-4 rounded-xl border border-indigo-500/20 flex items-start gap-4">
+      <div className="md:col-span-2 bg-linear-to-r from-indigo-900/40 to-purple-900/40 p-4 rounded-xl border border-indigo-500/20 flex items-start gap-4">
         <div className="p-2 bg-indigo-500/20 rounded-lg shrink-0 mt-1">
           <HeartPulse className="w-5 h-5 text-indigo-400" />
         </div>

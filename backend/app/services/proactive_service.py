@@ -42,8 +42,9 @@ def generate_proactive_ping(db: Session, user_id: str):
         - If no context: "কী ব্যাপার, আজ সারাদিন কোনো খোঁজ নাই যে?"
         """
 
+        from app.core.config import settings
         response = client.chat.completions.create(
-            model="openai/gpt-oss-120b",
+            model=settings.PRIMARY_CHAT_MODEL,
             messages=[{"role": "system", "content": ping_prompt}, {"role": "user", "content": "Generate the proactive ping message."}],
             temperature=0.7 # একটু ভ্যারিয়েশনের জন্য টেম্পারেচার বাড়ানো হলো
         )

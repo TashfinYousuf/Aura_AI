@@ -20,8 +20,9 @@ def generate_goal_tree(user_id: str, goal_title: str):
             "tasks": ["Task 1", "Task 2", "Task 3"]
         }}"""
 
+        from app.core.config import settings
         response = client.chat.completions.create(
-            model="openai/gpt-oss-120b",
+            model=settings.STRUCTURED_MODEL,
             messages=[{"role": "system", "content": system_prompt}, {"role": "user", "content": f"Create goal tree for: {goal_title}"}],
             response_format={"type": "json_object"},
             temperature=0.2

@@ -1,0 +1,43 @@
+services:
+  # 1. Aura FastAPI Backend Web Service
+  - type: web
+    name: aura-backend
+    env: python
+    region: oregon
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: cd backend && uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.0
+      - key: GROQ_API_KEY
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: SD_REMOTE_URL
+        sync: false
+      - key: FRONTEND_PRODUCTION_URL
+        value: https://aura-vc.vercel.app
+
+  # 2. Aura 24/7 Telegram Polling Background Worker
+  - type: worker
+    name: aura-telegram-bot
+    env: python
+    region: oregon
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: python backend/run_telegram.py
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.0
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: GROQ_API_KEY
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: SD_REMOTE_URL
+        sync: false
+      - key: FRONTEND_PRODUCTION_URL
+        value: https://aura-vc.vercel.app
+

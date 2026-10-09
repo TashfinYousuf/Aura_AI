@@ -52,8 +52,9 @@ Output strictly valid JSON matching this schema:
 }}"""
 
     try:
+        from app.core.config import settings
         res = client.chat.completions.create(
-            model="openai/gpt-oss-120b",
+            model=settings.STRUCTURED_MODEL,
             messages=[{"role": "system", "content": planner_prompt}],
             response_format={"type": "json_object"},
             temperature=0.2

@@ -1,52 +1,55 @@
+// FILE: frontend/app/page.tsx
 "use client";
 
 import dynamic from "next/dynamic";
 import { useEffect, useState } from "react";
-import { auth, googleProvider, facebookProvider } from "./firebase";
-import { signInWithEmailAndPassword, createUserWithEmailAndPassword, onAuthStateChanged, setPersistence, signInWithPopup, browserLocalPersistence, sendPasswordResetEmail, User } from "firebase/auth";
+import { auth, googleProvider } from "./firebase";
+import { 
+  signInWithEmailAndPassword, 
+  createUserWithEmailAndPassword, 
+  onAuthStateChanged, 
+  setPersistence, 
+  signInWithPopup, 
+  browserLocalPersistence, 
+  sendPasswordResetEmail, 
+  User 
+} from "firebase/auth";
 
 const ChatApp = dynamic(() => import("./ChatApp"), { ssr: false });
 
-export default function Page({ currentUser }: { currentUser: User }) {
-  // Mounting & Auth States
+export default function Page() {
   const [isMounted, setIsMounted] = useState(false);
   const [user, setUser] = useState<User | null>(null);
   const [loadingAuth, setLoadingAuth] = useState(true);
 
-  // Login Form States
   const [isLoginMode, setIsLoginMode] = useState(true);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [resetMsg, setResetMsg] = useState("");
+  const [authSubmitting, setAuthSubmitting] = useState(false);
 
-  // ১. Next.js Hydration Warning Fix (Mounting Check)
   useEffect(() => {
     setIsMounted(true);
-  }, []);
-
- // ২. Firebase Auth Auto-Restore
-  useEffect(() => {
-    // ☢️ ফায়ারবেসকে সেশন ব্রাউজারে ফিক্সড রাখতে
     setPersistence(auth, browserLocalPersistence)
       .then(() => {
-        // এরপর Auth State চেক
         const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
           setUser(currentUser);
           setLoadingAuth(false);
         });
-        return () => unsubscribe(); // Cleanup listener
+        return () => unsubscribe();
       })
-      .catch((error) => {
-        console.error("Auth Persistence Error:", error);
-        setLoadingAuth(false); // এরর হলেও যেন লোডিং স্ক্রিনে আটকে না থাকে
+      .catch((err) => {
+        console.error("Auth persistence error:", err);
+        setLoadingAuth(false);
       });
   }, []);
 
-  // ৩. Login / Signup Handler
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
+    setResetMsg("");
+    setAuthSubmitting(true);
     try {
       if (isLoginMode) {
         await signInWithEmailAndPassword(auth, email, password);
@@ -54,15 +57,16 @@ export default function Page({ currentUser }: { currentUser: User }) {
         await createUserWithEmailAndPassword(auth, email, password);
       }
     } catch (err: any) {
-      setError(err.message.replace("Firebase: ", "")); // ক্লিন এরর মেসেজ
+      setError(err.message.replace("Firebase: ", ""));
+    } finally {
+      setAuthSubmitting(false);
     }
   };
 
-  // ☢️ Social Login Handler
-  const handleSocialLogin = async (provider: any) => {
+  const handleSocialLogin = async () => {
     setError("");
     try {
-      await signInWithPopup(auth, provider);
+      await signInWithPopup(auth, googleProvider);
     } catch (err: any) {
       setError(err.message.replace("Firebase: ", ""));
     }
@@ -70,8 +74,7 @@ export default function Page({ currentUser }: { currentUser: User }) {
 
   const handleResetPassword = async () => {
     if (!email) {
-      setError("Please enter your email address in the box first.");
-      setResetMsg("");
+      setError("Please enter your email first.");
       return;
     }
     try {
@@ -80,116 +83,96 @@ export default function Page({ currentUser }: { currentUser: User }) {
       setError("");
     } catch (err: any) {
       setError(err.message.replace("Firebase: ", ""));
-      setResetMsg("");
     }
   };
 
-  // 🟢 Loading Screen (Mounting + Firebase Checking)
   if (!isMounted || loadingAuth) {
     return (
-      <div className="flex items-center justify-center h-screen bg-gray-950">
-        <div className="text-indigo-500 animate-pulse font-mono font-bold">Initializing Aura OS...</div>
+      <div className="flex flex-col items-center justify-center h-screen bg-gray-950 text-white gap-3">
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-indigo-500 border-t-transparent" />
+        <div className="text-indigo-400 font-mono text-sm tracking-wide animate-pulse">Initializing Aura OS...</div>
       </div>
     );
   }
 
-  // 🟢 If User is Logged In -> Show the actual App!
   if (user) {
     return <ChatApp currentUser={user} />;
   }
 
-  // 🔴 If NOT Logged In -> Show the Secure Gateway
   return (
-    <div className="h-screen w-full bg-gray-950 flex items-center justify-center font-sans px-4">
-      <div className="w-full max-w-md bg-gray-900 border border-gray-800 rounded-2xl shadow-[0_0_40px_rgba(79,70,229,0.15)] p-8">
-        
+    <div className="flex min-h-screen items-center justify-center bg-[#090a0f] p-4">
+      <div className="w-full max-w-md bg-gray-900/80 border border-gray-800 rounded-3xl p-8 backdrop-blur-xl shadow-2xl">
         <div className="text-center mb-8">
-          <h1 className="text-3xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-purple-400 mb-2">
+          <h1 className="text-3xl font-extrabold text-transparent bg-clip-text bg-linear-to-r from-indigo-400 via-purple-400 to-pink-400">
             Aura OS
           </h1>
-          <p className="text-gray-400 text-sm">Strictly Encrypted. Deeply Intimate.</p>
+          <p className="text-gray-400 text-xs mt-2">Next-Gen Intelligent Companion</p>
         </div>
+
+        {error && <div className="mb-4 p-3 bg-red-500/10 border border-red-500/30 rounded-xl text-red-400 text-xs">{error}</div>}
+        {resetMsg && <div className="mb-4 p-3 bg-green-500/10 border border-green-500/30 rounded-xl text-green-400 text-xs">{resetMsg}</div>}
 
         <form onSubmit={handleAuth} className="space-y-4">
           <div>
-            <label className="block text-gray-400 text-xs font-semibold uppercase tracking-wider mb-2">Email / Username</label>
-            <input 
-              type="email" 
+            <label className="block text-xs font-medium text-gray-300 mb-1">Email</label>
+            <input
+              type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className="w-full bg-gray-950 border border-gray-800 text-gray-100 rounded-lg px-4 py-3 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all"
-              placeholder="admin@aura.os"
               required
+              className="w-full px-4 py-2.5 bg-gray-950 border border-gray-800 rounded-xl text-white text-sm focus:outline-none focus:border-indigo-500"
+              placeholder="you@example.com"
             />
           </div>
 
           <div>
-            <label className="block text-gray-400 text-xs font-semibold uppercase tracking-wider mb-2">PIN / Password</label>
-            <input 
-              type="password" 
+            <label className="block text-xs font-medium text-gray-300 mb-1">Password</label>
+            <input
+              type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="w-full bg-gray-950 border border-gray-800 text-gray-100 rounded-lg px-4 py-3 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all"
-              placeholder="••••••••"
               required
+              className="w-full px-4 py-2.5 bg-gray-950 border border-gray-800 rounded-xl text-white text-sm focus:outline-none focus:border-indigo-500"
+              placeholder="••••••••"
             />
-
-            {/* পাসওয়ার্ড ফিল্ডের নিচে এটা বসবে */}
-            <div className="flex justify-end mt-1">
-              <button 
-                type="button" 
-                onClick={handleResetPassword} 
-                className="text-xs text-indigo-400 hover:text-indigo-300 transition-colors"
-              >
-                Forgot Password?
-              </button>
-            </div>
-            
-            {/* সাকসেস মেসেজ দেখানোর জন্য */}
-            {resetMsg && <p className="text-green-400 text-xs text-center bg-green-900/20 p-2 rounded mt-2">{resetMsg}</p>}
           </div>
 
-          {error && <p className="text-red-400 text-xs text-center bg-red-900/20 p-2 rounded">{error}</p>}
+          <div className="flex justify-end">
+            <button type="button" onClick={handleResetPassword} className="text-xs text-indigo-400 hover:text-indigo-300 transition">
+              Forgot Password?
+            </button>
+          </div>
 
-          <button 
-            type="submit" 
-            className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-semibold py-3 rounded-lg transition-all shadow-[0_0_15px_rgba(79,70,229,0.4)]"
+          <button
+            type="submit"
+            disabled={authSubmitting}
+            className="w-full py-3 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white rounded-xl font-medium text-sm transition shadow-lg shadow-indigo-600/20"
           >
-            {isLoginMode ? "Connect to Aura" : "Initialize New Companion"}
+            {authSubmitting ? "Processing..." : isLoginMode ? "Sign In" : "Create Account"}
           </button>
         </form>
 
-        {/* ☢️ New Social Login Section */}
-        <div className="mt-6 flex items-center justify-between">
-          <span className="border-b border-gray-700 w-1/5"></span>
-          <span className="text-xs text-gray-500 uppercase tracking-widest">Or continue with</span>
-          <span className="border-b border-gray-700 w-1/5"></span>
+        <div className="relative my-6">
+          <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-gray-800" /></div>
+          <div className="relative flex justify-center text-xs text-gray-500 uppercase"><span className="bg-gray-900 px-2">Or</span></div>
         </div>
 
-        <div className="mt-6 flex gap-4">
-          <button 
-            onClick={() => handleSocialLogin(googleProvider)}
-            className="w-full flex items-center justify-center gap-2 bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-300 py-2.5 rounded-lg transition-colors font-medium text-sm"
-          >
-            🌐 Google
-          </button>
-          <button 
-            onClick={() => handleSocialLogin(facebookProvider)}
-            className="w-full flex items-center justify-center gap-2 bg-[#1877F2]/10 hover:bg-[#1877F2]/20 border border-[#1877F2]/30 text-[#1877F2] py-2.5 rounded-lg transition-colors font-medium text-sm"
-          >
-            📘 Facebook
-          </button>
-        </div>
+        <button
+          onClick={handleSocialLogin}
+          type="button"
+          className="w-full py-2.5 bg-gray-800/80 hover:bg-gray-800 border border-gray-700/60 rounded-xl text-white text-sm font-medium transition flex items-center justify-center gap-2"
+        >
+          Continue with Google
+        </button>
 
-        <div className="mt-6 text-center">
-          <button 
-            onClick={() => setIsLoginMode(!isLoginMode)}
-            className="text-gray-400 hover:text-indigo-400 text-sm transition-colors"
+        <div className="text-center mt-6">
+          <button
+            onClick={() => { setIsLoginMode(!isLoginMode); setError(""); }}
+            className="text-xs text-gray-400 hover:text-white transition"
           >
-            {isLoginMode ? "Need a new instance? Sign up" : "Already have an instance? Log in"}
+            {isLoginMode ? "Need an account? Sign Up" : "Have an account? Sign In"}
           </button>
         </div>
-        
       </div>
     </div>
   );

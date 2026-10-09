@@ -41,25 +41,29 @@ async def realize_conversational_response(draft_text: str, user_text: str) -> st
 
     client = Groq(api_key=os.getenv("GROQ_API_KEY"))
 
+    from app.core.config import settings
+    is_bn = any('\u0980' <= c <= '\u09FF' for c in user_text)
+    lang_rule = "colloquial Bengali script" if is_bn else "casual texting English"
+    
     correction_prompt = f"""You are a dialogue quality controller for Aura, a 22yo modern, witty partner.
 The raw draft below sounds like awful literal Google Translate AI, robotic corporate therapy, or childish cartoon nonsense.
 
 User message: "{user_text}"
 Awful raw draft: "{draft_text}"
 
-TASK: Rewrite the response into 1-2 totally authentic, natural sentences in colloquial Bengali script.
+TASK: Rewrite the response into 1-2 totally authentic, natural sentences in {lang_rule}.
 RULES:
-- STRICTLY FORBID: "নিজের প্রতি দয়া দেখাও", "কী মজা করব জানো না", "ক্লান্তি স্বাভাবিক", "দারুণ কাজ করেছ", "শ্বাস নাও".
-- NO childish emojis (No 😜, 😉, 🥳).
+- NO corporate therapy or AI disclaimers ("take a breath", "as an ai", "caring for yourself").
+- NO childish cartoon emojis (No 😜, 😉, 🥳).
 - Sound like a real young adult girlfriend texting on phone: calm, affectionate, natural.
-- Output ONLY the rewritten Bengali sentence, nothing else."""
+- Output ONLY the rewritten sentence, nothing else."""
 
     try:
         res = client.chat.completions.create(
-            model="openai/gpt-oss-120b",
+            model=settings.PRIMARY_CHAT_MODEL,
             messages=[{"role": "system", "content": correction_prompt}],
             temperature=0.5,
-            max_tokens=60
+            max_tokens=150
         )
         refined = res.choices[0].message.content.strip()
         refined = refined.replace('"', '').replace("'", "")

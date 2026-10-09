@@ -36,6 +36,7 @@ from app.services.episodic_service import get_contextual_episodic_callback, extr
 
 from app.database.vector_db import save_to_memory, search_memory
 from app.routers.voice import manager
+from app.core.config import settings
 
 
 router = APIRouter(prefix="/api/chat", tags=["Chat Engine"])
@@ -139,7 +140,7 @@ Output strictly valid JSON:
 }}"""
 
         thought_response = client.chat.completions.create(
-            model="openai/gpt-oss-120b",
+            model=settings.STRUCTURED_MODEL,
             messages=[{"role": "system", "content": thought_prompt}],
             response_format={"type": "json_object"},
             temperature=0.2
@@ -195,26 +196,41 @@ STRICT BEHAVIORAL & IMMERSION RULES:
 
         messages = [{"role": "system", "content": system_instruction}]
         
-        # Dynamic Vision Routing
+        # Dynamic Vision Routing with graceful fallback
         if payload.image_base64 and payload.image_base64 != "string":
-            messages.append({
-                "role": "user",
-                "content": [
-                    {"type": "text", "text": payload.message or "What do you see in this image?"},
-                    {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{payload.image_base64}"}}
+            try:
+                vision_messages = [
+                    {"role": "system", "content": system_instruction},
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "text", "text": payload.message or "What do you see in this image?"},
+                            {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{payload.image_base64}"}}
+                        ]
+                    }
                 ]
-            })
-            model_name = "llama-3.2-90b-vision-preview"
+                response = client.chat.completions.create(
+                    model="llama-3.2-90b-vision-preview",
+                    messages=vision_messages,
+                    temperature=0.75,
+                    max_tokens=800
+                )
+            except Exception:
+                messages.append({"role": "user", "content": f"{payload.message or 'I just sent you a photo.'} [User shared a photo]"})
+                response = client.chat.completions.create(
+                    model=settings.PRIMARY_CHAT_MODEL,
+                    messages=messages,
+                    temperature=0.75,
+                    max_tokens=800
+                )
         else:
             messages.append({"role": "user", "content": payload.message})
-            model_name = "openai/gpt-oss-120b"
-
-        response = client.chat.completions.create(
-            model=model_name,
-            messages=messages,
-            temperature=0.75,
-            max_tokens=800
-        )
+            response = client.chat.completions.create(
+                model=settings.PRIMARY_CHAT_MODEL,
+                messages=messages,
+                temperature=0.75,
+                max_tokens=800
+            )
         reply_content = response.choices[0].message.content.strip()
 
         # Clean AI Hallucinations
@@ -296,9 +312,14 @@ async def get_chat_history(user_id: str, db: Session = Depends(get_db)):
                     "id": msg_data.get("id", str(mem.id)),
                     "role": msg_data.get("role", "ai"),
                     "content": msg_data.get("content", ""),
-                    "audioBase64": msg_data.get("audio_base64"),
-                    "isVoiceNote": msg_data.get("is_voice_note", False),
-                    "imageUrl": msg_data.get("image_url")
+                    "audioBase64": msg_data.get("audio_base64") or msg_data.get("audioBase64"),
+                    "isVoiceNote": bool(msg_data.get("is_voice_note") or msg_data.get("isVoiceNote")),
+                    "imageUrl": msg_data.get("image_url") or msg_data.get("imageUrl"),
+                    "videoUrl": msg_data.get("video_url") or msg_data.get("videoUrl"),
+                    "reaction": msg_data.get("reaction"),
+                    "replyTo": msg_data.get("replyTo") or msg_data.get("reply_to"),
+                    "replyPreview": msg_data.get("replyPreview") or msg_data.get("reply_preview"),
+                    "timestamp": msg_data.get("timestamp")
                 })
             except json.JSONDecodeError:
                 image_url = None
@@ -327,6 +348,31 @@ async def clear_chat_history(user_id: str, db: Session = Depends(get_db)):
             SemanticMemory.memory_type == "conversation"
         ).delete()
         db.commit()
+        return {"status": "success", "message": "History cleared"}
+    except Exception as e:
+        db.rollback()
+        return {"status": "error", "detail": str(e)}
+
+@router.delete("/message/{user_id}/{message_id}")
+async def delete_single_message(user_id: str, message_id: str, db: Session = Depends(get_db)):
+    try:
+        mems = db.query(SemanticMemory).filter(
+            SemanticMemory.user_id == user_id,
+            SemanticMemory.memory_type == "conversation"
+        ).all()
+        for m in mems:
+            try:
+                data = json.loads(str(m.content))
+                if data.get("id") == message_id or str(m.id) == message_id:
+                    db.delete(m)
+                    db.commit()
+                    return {"status": "success", "deleted_id": message_id}
+            except Exception:
+                pass
+        return {"status": "not_found", "message": "Message not found"}
+    except Exception as e:
+        db.rollback()
+        return {"status": "error", "detail": str(e)}
         return {"status": "success", "message": "Database completely wiped and sync-ready!"}
     except Exception as e:
         db.rollback()
