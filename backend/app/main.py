@@ -63,8 +63,23 @@ static_path.mkdir(parents=True, exist_ok=True)
 app.mount("/static", StaticFiles(directory=str(static_path)), name="static")
 
 @app.get("/")
-async def root():
-    return {"status": "online", "message": "Aura Companion OS running."}
+@app.get("/health")
+@app.get("/api/health")
+async def health_check():
+    db_status = "ok"
+    try:
+        from sqlalchemy import text
+        with SessionLocal() as db:
+            db.execute(text("SELECT 1"))
+    except Exception as e:
+        db_status = f"notice: {e}"
+
+    return {
+        "status": "online",
+        "app": "Aura Companion OS",
+        "database": db_status,
+        "timestamp": datetime.now(timezone.utc).isoformat()
+    }
 
 # Persistence Endpoints
 class SaveMessage(BaseModel):

@@ -1,0 +1,35 @@
+name: Keep Alive Supabase & Render
+
+on:
+  schedule:
+    # Runs every 6 hours (00:00, 06:00, 12:00, 18:00 UTC)
+    - cron: '0 */6 * * *'
+  workflow_dispatch: # Allows manual trigger from GitHub UI anytime
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Aura Backend & Supabase Database
+        run: |
+          echo "🚀 Pinging Aura Backend to keep Render & Supabase active..."
+          
+          # Target URL from GitHub Secret or fallback
+          TARGET_URL="${{ secrets.BACKEND_PRODUCTION_URL }}"
+          if [ -z "$TARGET_URL" ]; then
+            TARGET_URL="https://aura-vc.vercel.app"
+          fi
+          
+          echo "Pinging: $TARGET_URL/api/health"
+          RESPONSE=$(curl -s -L -w "\nHTTP_STATUS:%{http_code}" "$TARGET_URL/api/health" || true)
+          echo "$RESPONSE"
+          
+          # If direct Supabase URL is provided in Secrets, ping it directly as well
+          if [ -n "${{ secrets.SUPABASE_URL }}" ] && [ -n "${{ secrets.SUPABASE_ANON_KEY }}" ]; then
+            echo "⚡ Direct ping to Supabase REST API..."
+            curl -s -X GET "${{ secrets.SUPABASE_URL }}/rest/v1/" \
+              -H "apikey: ${{ secrets.SUPABASE_ANON_KEY }}" \
+              -H "Authorization: Bearer ${{ secrets.SUPABASE_ANON_KEY }}" || true
+          fi
+          
+          echo "✅ Keep-alive ping completed successfully!"
