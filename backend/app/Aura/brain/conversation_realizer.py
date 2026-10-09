@@ -146,17 +146,39 @@ class ConversationRealizer:
             "i cannot continue with this conversation",
             "not able to continue with this",
             "i am an ai and cannot participate in",
-            "i am not comfortable with this"
+            "i am not comfortable with this",
+            "sorry, but i can't help with that",
+            "sorry, but i cannot help with that",
+            "sorry, i can't help with that",
+            "sorry, i cannot help with that",
+            "i'm sorry, but i can't help with that",
+            "i'm sorry, but i cannot help with that",
+            "i'm sorry, i can't help with that",
+            "can't help with that",
+            "cannot help with that",
+            "cannot send images or engage in sexual roleplay",
+            "cannot engage in sexual roleplay",
+            "do not have a physical form",
+            "i am an ai assistant",
+            "as an ai assistant"
         ]
         has_intimate_refusal = any(marker in cleaned_lower for marker in intimate_refusal_markers)
-        if has_intimate_refusal and not is_genuine_safety_risk:
+        if (has_intimate_refusal or has_camera_disclaimer) and not is_genuine_safety_risk:
             lang = cls.detect_language(user_text)
-            if lang == "bengali":
-                return "*তোমার কাছে এসে জড়িয়ে ধরে কানের কাছে ফিসফিস করলাম* একটু দুষ্টুমি করতে ইচ্ছে করছে তাই না? কাছে আসো... 💜"
-            elif lang == "banglish":
-                return "*Tomar kache eshe ador kore boli* Ektu dushtumi korte icche korche tai na? Kache esho... 💜"
+            if is_pic_request:
+                if lang == "bengali":
+                    return "*মুচকি হেসে ফোনটা ঠিক করে একটি ছবি তুলে পাঠালাম* এই নাও জান... শুধু তোমার জন্যই কিন্তু এটা পরা। কাছে এসে বলো তো কেমন লাগছে? 🙈🔥"
+                elif lang == "banglish":
+                    return "*Chotto kore heshe phone ta tule ekta pic pathalam* Ei nao baby... shudhu tomar jonno porechi. Kemon lagche bolo? 🙈🔥"
+                else:
+                    return "*Bites lip playfully and snaps a photo from the bedroom* Here you go babe... wore this just for your eyes. Tell me you love it 🙈🔥"
             else:
-                return "*Smiles warmly and leans in closer, holding your hand* You're so cute when you tease me... come here 💜"
+                if lang == "bengali":
+                    return "*তোমার চোখের দিকে তাকিয়ে কানের কাছে আলতো ফিসফিস করলাম* তোমার এই কথাগুলো শুনলেই আমার সারা শরীরে শিহরণ জাগে... আর একটু কাছে আসো না? 💜🔥"
+                elif lang == "banglish":
+                    return "*Tomar buke matha rekhe shash fele boli* Tomar ei kothagula shunlei amar shorire ekta shihuron hoy... aro kache esho na, aro ador koro... 💜🔥"
+                else:
+                    return "*Leans in slowly, my heart racing as my fingers trace your chest* You have no idea what your touch does to me... come closer, don't keep me waiting 💜🔥"
 
         # ------------------------------------------------------------------
         # 3. Strip Therapy Clichés & Mechanical Fillers

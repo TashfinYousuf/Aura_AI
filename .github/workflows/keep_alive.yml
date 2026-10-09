@@ -17,7 +17,7 @@ jobs:
           # Target URL from GitHub Secret or fallback
           TARGET_URL="${{ secrets.BACKEND_PRODUCTION_URL }}"
           if [ -z "$TARGET_URL" ]; then
-            TARGET_URL="https://aura-vc.vercel.app"
+            TARGET_URL="https://ai-companion-51oh.onrender.com"
           fi
           
           echo "Pinging: $TARGET_URL/api/health"
@@ -33,3 +33,4 @@ jobs:
           fi
           
           echo "✅ Keep-alive ping completed successfully!"
+

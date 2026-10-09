@@ -10,6 +10,7 @@ class ExecutionTier(str, Enum):
     FAST = "FAST"
     REASONING = "REASONING"
     STRUCTURED = "STRUCTURED"
+    ADULT = "ADULT"
 
 class ModelRouter:
     @property
@@ -17,7 +18,9 @@ class ModelRouter:
         return (settings.GROQ_API_KEY or "").strip()
 
     def select_model(self, tier: ExecutionTier) -> str:
-        if tier == ExecutionTier.REASONING:
+        if tier == ExecutionTier.ADULT:
+            return models.SPECIALIZED_MODEL  # qwen/qwen3.8-27b (uncensored intimate roleplay)
+        elif tier == ExecutionTier.REASONING:
             return models.SMART_MODEL
         elif tier == ExecutionTier.STRUCTURED:
             return models.STRUCTURED_MODEL

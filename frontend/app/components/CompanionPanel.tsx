@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { Sparkles, Heart, Shield, Image as ImageIcon, BarChart2, Trash2, LogOut } from "lucide-react";
+import { Sparkles, Heart, Flame, Shield, Image as ImageIcon, BarChart2, Trash2, LogOut } from "lucide-react";
 
 interface RelationshipState {
   level: number;
@@ -11,8 +11,8 @@ interface RelationshipState {
 
 interface CompanionPanelProps {
   relationship: RelationshipState;
-  presentationMode: "private" | "public";
-  setPresentationMode: (mode: "private" | "public") => void;
+  presentationMode: "private" | "public" | "adult";
+  setPresentationMode: (mode: "private" | "public" | "adult") => void;
   isIncognito: boolean;
   setIsIncognito: (val: boolean) => void;
   showMediaGallery: boolean;
@@ -60,7 +60,7 @@ export const CompanionPanel: React.FC<CompanionPanelProps> = ({
                 Aura
               </h1>
 
-              {/* Mode Switcher Pill: Private vs Creator */}
+              {/* Mode Switcher Pill: Normal vs Intimate vs Creator */}
               <div className="flex items-center bg-gray-800/80 p-0.5 rounded-full border border-gray-700/60 text-xs">
                 <button
                   onClick={() => setPresentationMode("private")}
@@ -72,7 +72,19 @@ export const CompanionPanel: React.FC<CompanionPanelProps> = ({
                   title="1:1 Intimate & Intellectual Companion"
                 >
                   <Heart className="w-3 h-3 fill-current" />
-                  Private
+                  Normal
+                </button>
+                <button
+                  onClick={() => setPresentationMode("adult")}
+                  className={`px-2.5 py-1 rounded-full transition-all flex items-center gap-1 font-medium ${
+                    presentationMode === "adult"
+                      ? "bg-gradient-to-r from-rose-600 to-pink-600 text-white shadow-sm shadow-pink-900/50"
+                      : "text-gray-400 hover:text-pink-300"
+                  }`}
+                  title="Sensual & Intimate Adult Roleplay Mode"
+                >
+                  <Flame className="w-3 h-3 fill-current" />
+                  Intimate
                 </button>
                 <button
                   onClick={() => setPresentationMode("public")}

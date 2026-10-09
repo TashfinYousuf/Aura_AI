@@ -45,7 +45,9 @@ class UnifiedCognitivePipeline:
         # -------------------------------------------------------------
         from app.Aura.brain.adult_engine import adult_engine
         effective_mode = presentation_mode
-        if presentation_mode != "public":
+        if presentation_mode == "adult":
+            effective_mode = "adult"
+        elif presentation_mode != "public":
             if adult_engine.is_adult_trigger(user_text):
                 effective_mode = "adult"
             elif adult_engine.is_normal_exit_trigger(user_text):
@@ -127,10 +129,14 @@ COMMUNICATION PRINCIPLES (AURA CANON):
         messages.extend(conversation_history[-4:])
         messages.append({"role": "user", "content": user_text})
 
+        chosen_tier = ExecutionTier.ADULT if effective_mode == "adult" else ExecutionTier.STRUCTURED
+        token_limit = 250 if effective_mode == "adult" else 400
+
         raw_output = await model_router.complete(
             messages=messages,
-            tier=ExecutionTier.STRUCTURED,
+            tier=chosen_tier,
             temperature=temperature,
+            max_tokens=token_limit,
             response_format={"type": "json_object"}
         )
 

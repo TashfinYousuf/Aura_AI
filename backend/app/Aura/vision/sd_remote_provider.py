@@ -105,7 +105,11 @@ class RemoteStableDiffusionProvider:
                         print(f"🔥 [REMOTE STABLE DIFFUSION SUCCESS]: Generated fresh deliverable via Colab SD: {file_name}")
                         return f"/static/generated/aura/{file_name}"
                 else:
-                    print(f"⚠️ [COLAB SD ERROR]: Remote server returned status {response.status_code}")
+                    if "ERR_NGROK_3200" in response.text or response.status_code == 404:
+                        print(f"⚠️ [COLAB SD OFFLINE]: Ngrok tunnel at {base_url} is currently offline (Colab session stopped or new URL generated).")
+                        print("💡 Check your Google Colab tab, copy the active URL, and update SD_REMOTE_URL in .env and Render!")
+                    else:
+                        print(f"⚠️ [COLAB SD ERROR]: Remote server returned status {response.status_code}")
         except Exception as e:
             print(f"⚠️ [REMOTE STABLE DIFFUSION PROVIDER]: Connection failed to {base_url}: {e}")
 

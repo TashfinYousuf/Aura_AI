@@ -19,7 +19,7 @@ export default function ChatApp({ currentUser }: { currentUser: User }) {
   ]);
   const [streamingText, setStreamingText] = useState<string>("");
   const [actionStatus, setActionStatus] = useState<string | null>(null);
-  const [presentationMode, setPresentationMode] = useState<"private" | "public">("private");
+  const [presentationMode, setPresentationMode] = useState<"private" | "public" | "adult">("private");
 
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
