@@ -2,9 +2,9 @@
 """
 Aura 1-Click Indestructible Remote Stable Diffusion Server:
 - Zero-Pera Auto-Installer: Automatically detects and installs any missing packages on Colab or Kaggle.
-- 100% Free of ModuleNotFoundError: Never crashes on missing pyngrok, fastapi, diffusers, or uvicorn.
-- Auto-Detects & Activates trained Aura LoRA (aura_v1.safetensors) from Colab, Kaggle, or Google Drive.
-- Runs Cloudflare Tunnel (100% free, unlimited, no token needed, zero registration).
+- 100% Free of ModuleNotFoundError: Never crashes on missing pyngrok, fastapi, diffusers, uvicorn, peft, or insightface.
+- Dual-Engine Identity Lock: Auto-loads trained Aura LoRA (aura_v1.safetensors) + InsightFace Inswapper (aura_master_identity.jpg).
+- Runs Cloudflare Tunnel (100% free, unlimited, no token needed, zero registration) or Ngrok Static Domain.
 - Provides instant URL for SD_REMOTE_URL in Aura .env.
 """
 
@@ -21,12 +21,16 @@ def ensure_dependencies():
         ("diffusers", "diffusers>=0.30.0"),
         ("transformers", "transformers"),
         ("accelerate", "accelerate"),
+        ("peft", "peft"),
         ("fastapi", "fastapi"),
         ("uvicorn", "uvicorn"),
         ("pydantic", "pydantic"),
         ("PIL", "pillow"),
         ("nest_asyncio", "nest-asyncio"),
-        ("pyngrok", "pyngrok")
+        ("pyngrok", "pyngrok"),
+        ("cv2", "opencv-python-headless"),
+        ("insightface", "insightface"),
+        ("onnxruntime", "onnxruntime")
     ]
     missing = []
     for mod, pkg in packages_to_check:
@@ -40,6 +44,12 @@ def ensure_dependencies():
         print(f"📦 [AURA AUTO-SETUP]: Preparing environment ({', '.join(missing)})...")
         print("⏳ Installing required libraries (takes ~30-45s)...")
         print("=" * 70)
+        try:
+            import torch
+            if torch.cuda.is_available() and "onnxruntime" in missing:
+                missing = ["onnxruntime-gpu" if p == "onnxruntime" else p for p in missing]
+        except Exception:
+            pass
         subprocess.run([sys.executable, "-m", "pip", "install", "-q"] + missing, check=False)
         print("✅ [AURA AUTO-SETUP]: Environment ready!")
 
@@ -55,13 +65,15 @@ from pydantic import BaseModel
 import uvicorn
 
 # -----------------------------------------------------------------------------
-# 2. Master Face Model Auto-Downloader
+# 2. Master Face & Model Auto-Downloaders
 # -----------------------------------------------------------------------------
 def ensure_inswapper_model() -> str:
     possible_paths = [
         Path("inswapper_128.onnx"),
         Path("/content/inswapper_128.onnx"),
-        Path("/kaggle/working/inswapper_128.onnx")
+        Path("/kaggle/working/inswapper_128.onnx"),
+        Path("/content/Aura_AI/inswapper_128.onnx"),
+        Path("/kaggle/working/Aura_AI/inswapper_128.onnx")
     ]
     for p in possible_paths:
         if p.exists() and p.stat().st_size > 100000000:
@@ -80,8 +92,71 @@ def ensure_inswapper_model() -> str:
                 print("✅ [MODEL READY]: inswapper_128.onnx downloaded successfully!")
                 return swapper_path
         except Exception as e:
-            print(f"⚠️ Mirror failed: {e}")
+            print(f"⚠️ Mirror notice: {e}")
     return swapper_path
+
+def ensure_aura_lora() -> str:
+    candidate_paths = [
+        Path("aura_v1.safetensors"),
+        Path("/content/aura_v1.safetensors"),
+        Path("/kaggle/working/aura_v1.safetensors"),
+        Path("/content/drive/MyDrive/Aura_AI/aura_v1.safetensors"),
+        Path("/content/drive/MyDrive/aura_v1.safetensors"),
+        Path("backend/app/static/models/aura_v1.safetensors"),
+        Path("/content/Aura_AI/backend/app/static/models/aura_v1.safetensors"),
+        Path("/kaggle/working/Aura_AI/backend/app/static/models/aura_v1.safetensors")
+    ]
+    # Check filesystem dynamically
+    for root_dir in ["/content", "/kaggle/working", "."]:
+        rp = Path(root_dir)
+        if rp.exists():
+            try:
+                for f in rp.rglob("aura_v1.safetensors"):
+                    if f.exists() and f.stat().st_size > 5000000:
+                        return str(f)
+            except Exception:
+                pass
+
+    for p in candidate_paths:
+        if p.exists() and p.stat().st_size > 5000000:
+            return str(p)
+
+    target_path = "aura_v1.safetensors"
+    url = "https://raw.githubusercontent.com/TashfinYousuf/Aura_AI/main/backend/app/static/models/aura_v1.safetensors"
+    try:
+        print(f"📥 [DOWNLOADING AURA LORA]: Fetching master weights from GitHub ({url})...")
+        urllib.request.urlretrieve(url, target_path)
+        if os.path.exists(target_path) and os.path.getsize(target_path) > 5000000:
+            print("✅ [LORA READY]: aura_v1.safetensors downloaded successfully!")
+            return target_path
+    except Exception as e:
+        print(f"⚠️ LoRA auto-download notice: {e}")
+    return target_path
+
+def ensure_master_identity() -> str:
+    possible_paths = [
+        Path("backend/app/static/references/aura_master_identity.jpg"),
+        Path("/content/Aura_AI/backend/app/static/references/aura_master_identity.jpg"),
+        Path("/kaggle/working/Aura_AI/backend/app/static/references/aura_master_identity.jpg"),
+        Path("aura_master_identity.jpg"),
+        Path("/content/aura_master_identity.jpg"),
+        Path("/kaggle/working/aura_master_identity.jpg")
+    ]
+    for p in possible_paths:
+        if p.exists() and p.stat().st_size > 50000:
+            return str(p)
+
+    target_path = "aura_master_identity.jpg"
+    url = "https://raw.githubusercontent.com/TashfinYousuf/Aura_AI/main/backend/app/static/references/aura_master_identity.jpg"
+    try:
+        print(f"📥 [DOWNLOADING MASTER FACE]: Fetching Aura master reference face from GitHub...")
+        urllib.request.urlretrieve(url, target_path)
+        if os.path.exists(target_path) and os.path.getsize(target_path) > 50000:
+            print("✅ [MASTER FACE READY]: aura_master_identity.jpg downloaded successfully!")
+            return target_path
+    except Exception as e:
+        print(f"⚠️ Master face download notice: {e}")
+    return target_path
 
 # -----------------------------------------------------------------------------
 # 3. Main Server Orchestrator
@@ -130,57 +205,48 @@ def launch_server():
             pass
 
     # -------------------------------------------------------------------------
-    # Comprehensive Aura LoRA Discovery
+    # Comprehensive Aura LoRA Activation
     # -------------------------------------------------------------------------
     lora_loaded = False
-    candidate_loras = [
-        "aura_v1.safetensors",
-        "/content/aura_v1.safetensors",
-        "/kaggle/working/aura_v1.safetensors",
-        "/content/drive/MyDrive/Aura_AI/aura_v1.safetensors",
-        "/content/drive/MyDrive/aura_v1.safetensors",
-        "backend/app/static/models/aura_v1.safetensors"
-    ]
-    # Scan filesystem dynamically
-    for root_dir in ["/content", "/kaggle/working", "."]:
-        rp = Path(root_dir)
-        if rp.exists():
+    lora_path = ensure_aura_lora()
+    if os.path.exists(lora_path) and os.path.getsize(lora_path) > 100000:
+        try:
+            pipe.load_lora_weights(lora_path)
+            lora_loaded = True
+            print("=" * 70)
+            print(f"💎 [LORA IDENTITY ACTIVATED]: Loaded custom trained Aura LoRA from:")
+            print(f"👉 {lora_path}")
+            print("=" * 70)
+        except Exception as le:
+            print(f"ℹ️ [LORA LOAD NOTICE]: {le}. Attempting PEFT adapter injection...")
             try:
-                for f in rp.rglob("aura_v1.safetensors"):
-                    fs = str(f)
-                    if fs not in candidate_loras:
-                        candidate_loras.insert(0, fs)
+                from safetensors.torch import load_file
+                from peft import set_peft_model_state_dict
+                sd = load_file(lora_path)
+                set_peft_model_state_dict(pipe.unet, sd)
+                lora_loaded = True
+                print("💎 [PEFT LORA ACTIVATED]: LoRA adapter state injected successfully into UNet!")
+            except Exception as pefte:
+                print(f"⚠️ [PEFT INJECT NOTICE]: {pefte}")
+
+        # Auto-backup to Google Drive if Drive is mounted on Colab
+        if os.path.exists("/content/drive/MyDrive"):
+            try:
+                import shutil
+                drive_dest = Path("/content/drive/MyDrive/Aura_AI/aura_v1.safetensors")
+                drive_dest.parent.mkdir(parents=True, exist_ok=True)
+                if not drive_dest.exists():
+                    shutil.copy(lora_path, str(drive_dest))
+                    print(f"💾 [PERMANENT BACKUP]: Backed up aura_v1.safetensors to your Google Drive ({drive_dest})!")
             except Exception:
                 pass
 
-    for lp in candidate_loras:
-        if os.path.exists(lp) and os.path.getsize(lp) > 100000:
-            try:
-                pipe.load_lora_weights(lp)
-                lora_loaded = True
-                print("=" * 70)
-                print(f"💎 [LORA IDENTITY ACTIVATED]: Loaded custom trained Aura LoRA from:")
-                print(f"👉 {lp}")
-                print("=" * 70)
-
-                # Auto-backup to Google Drive if Drive is mounted on Colab
-                if os.path.exists("/content/drive/MyDrive"):
-                    try:
-                        import shutil
-                        drive_dest = Path("/content/drive/MyDrive/Aura_AI/aura_v1.safetensors")
-                        drive_dest.parent.mkdir(parents=True, exist_ok=True)
-                        if not drive_dest.exists():
-                            shutil.copy(lp, str(drive_dest))
-                            print(f"💾 [PERMANENT BACKUP]: Backed up aura_v1.safetensors to your Google Drive ({drive_dest})!")
-                    except Exception:
-                        pass
-                break
-            except Exception as le:
-                print(f"⚠️ [LORA LOAD NOTICE]: {le}")
-
-    # Optional InsightFace Face Swap
+    # -------------------------------------------------------------------------
+    # Dual-Engine Facial Identity Lock (InsightFace Inswapper)
+    # -------------------------------------------------------------------------
     face_swapper = None
     face_analyzer = None
+    master_face_file = ensure_master_identity()
     try:
         import insightface
         from insightface.app import FaceAnalysis
@@ -243,28 +309,38 @@ def launch_server():
             height=gen_h
         ).images[0]
 
-        # Apply facial identity conditioning if master face and swapper are available
-        if face_swapper and face_analyzer and req.face_image:
+        # Apply master facial identity conditioning (Dual-Engine Lock)
+        if face_swapper and face_analyzer:
             try:
                 import numpy as np
                 import cv2
                 from PIL import Image, ImageFilter
 
-                target_np = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR)
-                src_raw = req.face_image.split(",")[-1]
-                src_bytes = base64.b64decode(src_raw)
-                src_np = cv2.imdecode(np.frombuffer(src_bytes, np.uint8), cv2.IMREAD_COLOR)
+                src_np = None
+                if req.face_image:
+                    try:
+                        src_raw = req.face_image.split(",")[-1]
+                        src_bytes = base64.b64decode(src_raw)
+                        src_np = cv2.imdecode(np.frombuffer(src_bytes, np.uint8), cv2.IMREAD_COLOR)
+                    except Exception:
+                        src_np = None
 
-                src_faces = face_analyzer.get(src_np)
-                if src_faces:
-                    src_face = src_faces[0]
-                    tgt_faces = face_analyzer.get(target_np)
-                    if tgt_faces:
-                        tgt_faces = sorted(tgt_faces, key=lambda f: (f.bbox[2]-f.bbox[0]) * (f.bbox[3]-f.bbox[1]), reverse=True)
-                        target_np = face_swapper.get(target_np, tgt_faces[0], src_face, paste_back=True)
-                        image = Image.fromarray(cv2.cvtColor(target_np, cv2.COLOR_BGR2RGB))
-                        image = image.filter(ImageFilter.UnsharpMask(radius=1.0, percent=105, threshold=3))
-                        print("✨ [FACIAL IDENTITY LOCK]: Aura's master face seamlessly applied!")
+                # Fallback to local master identity reference file
+                if src_np is None and os.path.exists(master_face_file):
+                    src_np = cv2.imread(master_face_file)
+
+                if src_np is not None:
+                    src_faces = face_analyzer.get(src_np)
+                    if src_faces:
+                        src_face = src_faces[0]
+                        target_np = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR)
+                        tgt_faces = face_analyzer.get(target_np)
+                        if tgt_faces:
+                            tgt_faces = sorted(tgt_faces, key=lambda f: (f.bbox[2]-f.bbox[0]) * (f.bbox[3]-f.bbox[1]), reverse=True)
+                            target_np = face_swapper.get(target_np, tgt_faces[0], src_face, paste_back=True)
+                            image = Image.fromarray(cv2.cvtColor(target_np, cv2.COLOR_BGR2RGB))
+                            image = image.filter(ImageFilter.UnsharpMask(radius=1.0, percent=105, threshold=3))
+                            print("✨ [FACIAL IDENTITY LOCK]: Aura's master face seamlessly locked onto deliverable!")
             except Exception as fe:
                 print(f"⚠️ [FACE SWAP NOTICE]: {fe}")
 
