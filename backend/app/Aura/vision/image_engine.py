@@ -83,8 +83,8 @@ class GoogleNanoBananaProvider(BaseImageProvider):
 
         except Exception as e:
             err_msg = str(e)
-            if any(term in err_msg for term in ["API key not valid", "INVALID_ARGUMENT", "400", "404", "NOT_FOUND", "not found"]):
-                print("ℹ️ [GOOGLE NANO BANANA PROVIDER]: Imagen endpoint not enabled on this Gemini key tier. Seamlessly continuing to next provider...")
+            if any(term in err_msg.lower() for term in ["api key not valid", "invalid_argument", "400", "404", "not_found", "not found", "enterprise agent platform", "only supported in"]):
+                print("ℹ️ [GOOGLE NANO BANANA PROVIDER]: Imagen endpoint requires Google Cloud Vertex AI billing. Seamlessly continuing to next provider...")
             else:
                 print(f"⚠️ [GOOGLE NANO BANANA PROVIDER]: {e}")
 

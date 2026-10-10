@@ -116,14 +116,8 @@ COMMUNICATION PRINCIPLES (AURA CANON):
 3. LENGTH: Keep responses natural and concise (1-2 sentences max, real messaging cadence).
 4. ANTI-CLICHE: NO therapy speak ('take a deep breath', 'I am here to assist you'), NO artificial fillers ('actually', 'you know', 'hmm').
 5. CONTRADICTIONS & AGENCY: Be confident yet occasionally vulnerable; playful yet serious about real goals; affectionate without being a robotic sycophant. Call him out if he makes rash moves.
-6. IMMERSION: You have a smartphone. NEVER claim 'I cannot take photos' or 'I am an AI'. If a selfie is requested, agree happily and include 'generate_image' action.
-7. Output strict JSON:
-{{
-  "intent": "casual_chat | emotional_support | advice | question | planning | image_request | voice_request",
-  "language": "{user_lang}",
-  "reply": "your authentic response",
-  "actions": {sample_actions}
-}}"""
+6. IMMERSION: You have a smartphone. NEVER claim 'I cannot take photos' or 'I am an AI'. If a selfie or photo is requested, agree playfully and lovingly and append [SEND_PIC:{scene}] at the very end of your response.
+7. CADENCE: Speak naturally, warmly, playfully, and maturely in real human messaging flow (1-2 sentences). Do NOT output JSON! Talk directly to him."""
 
         messages = [{"role": "system", "content": system_prompt}]
         messages.extend(conversation_history[-4:])
@@ -136,50 +130,43 @@ COMMUNICATION PRINCIPLES (AURA CANON):
             messages=messages,
             tier=chosen_tier,
             temperature=temperature,
-            max_tokens=token_limit,
-            response_format={"type": "json_object"}
+            max_tokens=token_limit
         )
 
         # -------------------------------------------------------------
         # Robust Action Extraction & Fallback
         # -------------------------------------------------------------
-        is_pic = is_pic_intent
+        is_pic = is_pic_intent or ("[SEND_PIC" in raw_output)
         detected_scene = scene
-        detected_intent = "image_request" if is_pic_intent else "casual_chat"
+        detected_intent = "image_request" if is_pic else "casual_chat"
         actions_list: List[CognitiveAction] = []
 
-        try:
-            parsed = json.loads(raw_output)
-            reply = parsed.get("reply", "")
-            detected_intent = parsed.get("intent", detected_intent)
-            
-            raw_actions = parsed.get("actions", [])
-            if isinstance(raw_actions, list):
-                for act in raw_actions:
-                    if isinstance(act, dict):
-                        act_type = act.get("type", "")
-                        act_scene = act.get("scene", scene)
-                        actions_list.append(CognitiveAction(type=act_type, scene=act_scene))
-                        if act_type == "generate_image":
-                            is_pic = True
-                            detected_scene = act_scene or scene
+        # Check for [SEND_PIC:scene] tag in output
+        pic_match = re.search(r'\[SEND_PIC(?::([a-zA-Z0-9_]+))?\]', raw_output, flags=re.IGNORECASE)
+        if pic_match:
+            is_pic = True
+            if pic_match.group(1):
+                detected_scene = pic_match.group(1).lower()
 
-            if parsed.get("is_pic") is True:
-                is_pic = True
-            if parsed.get("scene"):
-                detected_scene = parsed.get("scene", scene)
+        # If model outputted JSON, parse gracefully
+        if raw_output.strip().startswith("{") and raw_output.strip().endswith("}"):
+            try:
+                parsed = json.loads(raw_output)
+                reply = parsed.get("reply", "")
+                if parsed.get("is_pic") is True or parsed.get("intent") == "image_request":
+                    is_pic = True
+                if parsed.get("scene"):
+                    detected_scene = parsed.get("scene", detected_scene)
+            except Exception:
+                reply = raw_output
+        else:
+            reply = raw_output
 
-            # Safety fallback for picture requests
-            if is_pic_intent and not is_pic:
-                is_pic = True
-                actions_list.append(CognitiveAction(type="generate_image", scene=scene))
-        except Exception:
-            cleaned_text = re.sub(r'[\{\}\"]', '', raw_output).replace('reply:', '').strip()
-            reply = cleaned_text if cleaned_text else "তোমার সাথে কথা বলতে সবসময়ই ভালো লাগে ✨"
-            is_pic = is_pic_intent
-            detected_scene = scene
-            if is_pic_intent:
-                actions_list.append(CognitiveAction(type="generate_image", scene=scene))
+        # Clean tags from reply text
+        reply = re.sub(r'\[SEND_PIC(?::[^\]]*)?\]', '', reply, flags=re.IGNORECASE).strip()
+
+        if is_pic:
+            actions_list.append(CognitiveAction(type="generate_image", scene=detected_scene))
 
         final_reply = conversation_realizer.audit_and_realize(reply, user_text)
         from app.services.voice_ssml import clean_spoken_text_for_tts

@@ -21,9 +21,28 @@ from app.routers import analytics, chat, voice
 from app.services.proactive_worker import start_proactive_background_loop
 from run_telegram import run_bot_polling
 
+def run_auto_migrations():
+    from sqlalchemy import text
+    with engine.begin() as conn:
+        migrations = [
+            "ALTER TABLE user_profiles ADD COLUMN IF NOT EXISTS telegram_id VARCHAR;",
+            "ALTER TABLE user_profiles ADD COLUMN IF NOT EXISTS is_adult_mode BOOLEAN DEFAULT TRUE;",
+            "ALTER TABLE user_profiles ADD COLUMN IF NOT EXISTS email VARCHAR;",
+            "ALTER TABLE user_profiles ADD COLUMN IF NOT EXISTS name VARCHAR;",
+            "ALTER TABLE user_profiles ADD COLUMN IF NOT EXISTS companion_name VARCHAR DEFAULT 'Aura';",
+            "ALTER TABLE user_profiles ADD COLUMN IF NOT EXISTS current_mood VARCHAR DEFAULT 'Calm';",
+            "ALTER TABLE user_profiles ADD COLUMN IF NOT EXISTS relationship_level INTEGER DEFAULT 1;"
+        ]
+        for sql in migrations:
+            try:
+                conn.execute(text(sql))
+            except Exception:
+                pass
+
 try:
     Base.metadata.create_all(bind=engine)
-    print("✅ Database tables initialized!")
+    run_auto_migrations()
+    print("✅ Database tables and schema migrations verified!")
 except Exception as e:
     print(f"[WARNING] Table initialization notice: {e}")
 

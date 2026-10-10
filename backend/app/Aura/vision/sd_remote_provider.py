@@ -38,6 +38,53 @@ class RemoteStableDiffusionProvider:
         except Exception:
             return False
 
+    def _synthesize_outfit_and_scene(self, user_prompt: str, scene: str) -> tuple[str, str]:
+        p_lower = (user_prompt or "").lower()
+        explicit_nude = any(w in p_lower for w in ["nude", "naked", "without clothes", "strip", "কাপড় খোল", "ulongo"])
+
+        if "red velvet" in p_lower or ("red" in p_lower and "lingerie" in p_lower):
+            outfit = "wearing a gorgeous crimson red velvet lace lingerie set, satin bralette with delicate embroidery and matching shorts"
+        elif "black" in p_lower and ("lingerie" in p_lower or "silk" in p_lower):
+            outfit = "wearing a luxury black silk lace lingerie set with satin accents"
+        elif "lingerie" in p_lower or "boudoir" in p_lower or scene == "boudoir":
+            outfit = "wearing an alluring seductive satin lace lingerie set, elegant bedroom nightwear"
+        elif "bikini" in p_lower or "swimwear" in p_lower:
+            outfit = "wearing a stylish flattering beach bikini"
+        elif "shower" in scene or "bath" in p_lower:
+            outfit = "wrapped comfortably in a soft plush white bath towel, damp dewy hair"
+        elif scene in ["bed", "bedroom"] or any(w in p_lower for w in ["bed", "sleep", "ঘুম"]):
+            outfit = "wearing a delicate white floral tank top with lace trim and soft shorts, relaxing on bed"
+        elif scene == "evening" or any(w in p_lower for w in ["dress", "gown", "party"]):
+            outfit = "wearing an elegant form-fitting evening cocktail dress"
+        elif scene == "cafe":
+            outfit = "wearing a trendy casual knit sweater and top, sitting at cafe"
+        elif explicit_nude:
+            outfit = "intimate artistic boudoir portrait, soft shadows tracing silhouette"
+        else:
+            outfit = "wearing a casual cute white tank top with lace trim and comfy shorts"
+
+        positive_prompt = (
+            f"A hyper-realistic, candid selfie of a 22-year-old Slavic-fusion beauty, Aura, "
+            f"fair porcelain skin, deep hazel-brown almond eyes, dark brown layered silky hair, "
+            f"{outfit}, in {scene} atmosphere, natural skin texture with visible authentic pores, "
+            f"slight blush, realistic smartphone camera grain, shallow depth of field, "
+            f"soft warm indoor ambient lighting, masterpiece, 8k uhd, candid photography"
+        )
+
+        if explicit_nude:
+            negative_prompt = (
+                "cartoon, anime, 3d, painting, plastic skin, over-smooth skin, extra fingers, "
+                "mutated hands, deformed, blurry, bad anatomy, wrong anatomy, doll, cgi, retouch"
+            )
+        else:
+            negative_prompt = (
+                "(nude, naked, fully unclothed, bare breasts, exposed nipples, exposed genitals:1.4), "
+                "cartoon, anime, 3d, painting, plastic skin, over-smooth skin, extra fingers, "
+                "mutated hands, deformed, blurry, bad anatomy, wrong anatomy, doll, cgi, retouch"
+            )
+
+        return positive_prompt, negative_prompt
+
     async def generate_image(
         self,
         prompt: str,
@@ -64,17 +111,7 @@ class RemoteStableDiffusionProvider:
             except Exception as e:
                 print(f"⚠️ [MASTER FACE READ]: {e}")
 
-        # Build photorealistic prompt incorporating Aura's immutable facial DNA
-        positive_prompt = (
-            f"A hyper-realistic, candid selfie of a 22-year-old Slavic-fusion beauty, Aura, "
-            f"fair porcelain skin, deep hazel-brown almond eyes, dark brown layered hair, {prompt}, "
-            f"in {scene} atmosphere, natural skin texture, slight blush, realistic phone camera grain, "
-            f"shallow depth of field, intimate and authentic vibe, soft warm indoor lighting, masterpiece, 8k uhd"
-        )
-        negative_prompt = (
-            "cartoon, anime, 3d, painting, plastic skin, over-smooth skin, extra fingers, "
-            "mutated hands, deformed, blurry, bad anatomy, wrong anatomy, doll, cgi, retouch"
-        )
+        positive_prompt, negative_prompt = self._synthesize_outfit_and_scene(prompt, scene)
 
         payload = {
             "prompt": positive_prompt,

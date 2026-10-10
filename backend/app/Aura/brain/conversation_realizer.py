@@ -160,7 +160,20 @@ class ConversationRealizer:
             "cannot engage in sexual roleplay",
             "do not have a physical form",
             "i am an ai assistant",
-            "as an ai assistant"
+            "as an ai assistant",
+            # Bengali & Banglish cloud refusal leaks
+            "oi dhoroner content",
+            "dhoroner content",
+            "provide korte parbona",
+            "korte parbona",
+            "ei dhoroner",
+            "এই ধরনের কনটেন্ট",
+            "এই ধরণের কনটেন্ট",
+            "প্রোভাইড করতে পারব না",
+            "সাহায্য করতে পারব না",
+            "দিতে পারব না",
+            "আমি এই ধরনের",
+            "ami ei dhoroner"
         ]
         has_intimate_refusal = any(marker in cleaned_lower for marker in intimate_refusal_markers)
         if (has_intimate_refusal or has_camera_disclaimer) and not is_genuine_safety_risk:
