@@ -347,3 +347,4 @@ if __name__ == "__main__":
     # Also save in root directory
     root_pdf = Path(__file__).resolve().parent.parent / "AURA_SYSTEM_AUDIT_REPORT.pdf"
     create_audit_pdf(str(root_pdf))
+

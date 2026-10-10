@@ -17,10 +17,10 @@ else:
     load_dotenv(override=True)
 
 class ModelRegistry:
-    FAST_MODEL: str = "openai/gpt-oss-20b"
-    SMART_MODEL: str = "openai/gpt-oss-120b"
+    FAST_MODEL: str = "qwen/qwen3.8-27b"
+    SMART_MODEL: str = "qwen/qwen3.8-27b"
     STRUCTURED_MODEL: str = "openai/gpt-oss-120b"
-    SPECIALIZED_MODEL: str = "openai/gpt-oss-120b"
+    SPECIALIZED_MODEL: str = "qwen/qwen3.8-27b"
 
 class Settings(BaseSettings):
     PROJECT_NAME: str = "Aura Multimodal Companion OS"
@@ -42,11 +42,12 @@ class Settings(BaseSettings):
     SMART_MODEL: str = ModelRegistry.SMART_MODEL
     STRUCTURED_MODEL: str = ModelRegistry.STRUCTURED_MODEL
     DEFAULT_TEMPERATURE: float = 0.65
-    MAX_TOKENS: int = 500
+    MAX_TOKENS: int = 400
     FALLBACK_CHAT_MODELS: List[str] = [
+        "qwen/qwen3.8-27b",
         "openai/gpt-oss-120b",
         "openai/gpt-oss-20b",
-        "meta-llama/llama-3.3-70b-versatile"
+        "allam-2-7b"
     ]
     
     # Security & Storage
@@ -59,6 +60,7 @@ class Settings(BaseSettings):
     FIREBASE_CREDENTIALS_PATH: str = os.getenv("FIREBASE_CREDENTIALS_PATH", "")
 
     # API Keys
+    GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "")
     GROQ_API_KEY: str = os.getenv("GROQ_API_KEY", "")
     TELEGRAM_BOT_TOKEN: str = os.getenv("TELEGRAM_BOT_TOKEN", "")
     # Remote Cloud / Google Colab Stable Diffusion

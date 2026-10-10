@@ -76,7 +76,7 @@ class TestVoiceAndReferenceSynth(unittest.TestCase):
         refs = get_reference_vault_images()
         self.assertTrue(len(refs) > 0, "Reference vault must discover images in static/references/")
         ref_names = [r.name for r in refs]
-        self.assertIn("Aura 1.png", ref_names)
+        self.assertTrue("Aura_1.png" in ref_names or "Aura 1.png" in ref_names)
 
     def test_fresh_selfie_generation_from_reference_vault(self):
         """Invariant: Image generation synthesizes freshly created deliverable matching context."""

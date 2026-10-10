@@ -132,13 +132,39 @@ def launch_server():
         return {"images": [img_b64]}
 
     token = os.getenv("NGROK_AUTHTOKEN", "3G1yJe40UpaD17GLtlqvsQVRnpn_3aEmdUVKLh7NYHUjRe4ZK")
-    if token:
-        ngrok.set_auth_token(token)
+    public_url = None
 
-    tunnel = ngrok.connect(8000)
+    # Try ngrok first
+    if token:
+        try:
+            ngrok.set_auth_token(token)
+            tunnel = ngrok.connect(8000)
+            public_url = tunnel.public_url
+        except Exception as e:
+            print(f"⚠️ [NGROK ERROR]: {e}")
+
+    # Fallback to Cloudflare Tunnel (100% free, no token needed, works on Colab & Kaggle)
+    if not public_url:
+        print("🌐 Starting Cloudflare Tunnel (100% free, unlimited, no token needed)...")
+        try:
+            import subprocess, time, re
+            if not os.path.exists("cloudflared"):
+                subprocess.run("wget -q https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 -O cloudflared && chmod +x cloudflared", shell=True)
+            cf_proc = subprocess.Popen(["./cloudflared", "tunnel", "--url", "http://127.0.0.1:8000"], stderr=subprocess.PIPE, text=True)
+            for _ in range(20):
+                line = cf_proc.stderr.readline()
+                if "trycloudflare.com" in line:
+                    match = re.search(r"https://[a-zA-Z0-9\-]+\.trycloudflare\.com", line)
+                    if match:
+                        public_url = match.group(0)
+                        break
+                time.sleep(0.5)
+        except Exception as ce:
+            print(f"⚠️ [CLOUDFLARE TUNNEL NOTICE]: {ce}")
+
     print("=" * 60)
     print(f"🔥 Copy this URL into your Aura .env and Render:")
-    print(f"SD_REMOTE_URL={tunnel.public_url}")
+    print(f"SD_REMOTE_URL={public_url or 'http://localhost:8000'}")
     print("=" * 60)
 
     nest_asyncio.apply()

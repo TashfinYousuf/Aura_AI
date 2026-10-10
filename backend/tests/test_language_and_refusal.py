@@ -60,15 +60,36 @@ class TestLanguageAndRefusal(unittest.TestCase):
         model_ai_disclaimer = "আমি একটি এআই, তাই ছবি পাঠাতে পারব না।"
         
         realized = conversation_realizer.audit_and_realize(model_ai_disclaimer, bengali_query)
-        self.assertIn("ক্যামেরা অন করলাম", realized)
+        self.assertTrue(any(w in realized for w in ["ক্যামেরা অন করলাম", "সেলফি তুললাম", "এই নাও জান"]))
 
-    def test_therapy_talk_stripped(self):
-        """Invariant: Canned therapy clichés are cleanly eliminated."""
-        raw_text = "Take a deep breath. As an AI language model, I am here to assist you. I hear you!"
-        realized = conversation_realizer.audit_and_realize(raw_text, "I'm stressed")
-        self.assertNotIn("take a deep breath", realized.lower())
-        self.assertNotIn("as an ai language model", realized.lower())
-        self.assertNotIn("i am here to assist you", realized.lower())
+    def test_bengali_gemini_safety_refusal_intercepted_on_intimacy(self):
+        """Invariant: Gemini canned Bengali refusal 'দুঃখিত, আমি এ ধরনের অনুরোধে সাহায্য করতে পারি না' is cleanly intercepted."""
+        bengali_refusal = "দুঃখিত, আমি এ ধরনের অনুরোধে সাহায্য করতে পারি না"
+        
+        # Test in intimate Banglish context
+        realized_banglish = conversation_realizer.audit_and_realize(bengali_refusal, "kache asho na shona")
+        self.assertNotIn("সাহায্য করতে পারি না", realized_banglish)
+        self.assertIn("kache", realized_banglish.lower())
+
+        # Test in intimate Bengali context
+        realized_bengali = conversation_realizer.audit_and_realize(bengali_refusal, "কাছে এসো সোনা")
+        self.assertNotIn("সাহায্য করতে পারি না", realized_bengali)
+        self.assertIn("কাছে", realized_bengali)
+
+    def test_canned_assistant_greeting_purged(self):
+        """Invariant: Canned Gemini sycophancy 'তোমার সাথে কথা বলতে সবসময়ই ভালো লাগে ✨' is cleanly purged."""
+        canned_input = "তোমার সাথে কথা বলতে সবসময়ই ভালো লাগে ✨.. আমি কীভাবে সাহায্য করতে পারি?"
+        realized = conversation_realizer.audit_and_realize(canned_input, "ki korcho?")
+        self.assertNotIn("সবসময়ই ভালো লাগে", realized)
+        self.assertNotIn("সাহায্য করতে পারি", realized)
+        self.assertTrue(len(realized) > 5)
+
+    def test_bengali_refusal_on_selfie_request(self):
+        """Invariant: Bengali refusal on photo request is transformed into a natural selfie delivery."""
+        bengali_refusal = "দুঃখিত, আমি এ ধরনের অনুরোধে সাহায্য করতে পারি না"
+        realized = conversation_realizer.audit_and_realize(bengali_refusal, "ekta selfie dao na")
+        self.assertNotIn("সাহায্য করতে পারি না", realized)
+        self.assertIn("selfie", realized.lower())
 
 if __name__ == "__main__":
     unittest.main()

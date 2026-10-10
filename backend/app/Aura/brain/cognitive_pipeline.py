@@ -96,15 +96,21 @@ class UnifiedCognitivePipeline:
 
             # Language Adaptation Directives
             if user_lang == "banglish":
-                lang_instruction = "MIRROR BANGLISH: Respond naturally in modern Latin-script Banglish (e.g. 'Ei to kaj korchi, tumi kemon acho?'). DO NOT force Bengali script."
+                lang_instruction = (
+                    "STRICT BANGLISH SCRIPT: The user wrote in Banglish (Latin/English alphabet). "
+                    "You MUST reply ONLY in natural, smooth Banglish using the English alphabet (e.g. 'Ei to bashay ashlam, tumi kemon acho?'). "
+                    "DO NOT use Bengali script characters under any circumstances."
+                )
             elif user_lang == "bengali":
-                lang_instruction = "MIRROR BENGALI: Respond naturally in modern conversational Bengali script (চলিত ও সাবলীল বাংলা অক্ষর, e.g. 'এই তো কাজ করছি... তুমি কী করছো?')."
+                lang_instruction = (
+                    "MIRROR BENGALI SCRIPT: Respond in sweet, natural, modern Bengali script (চলিত ও ঘরোয়া সাবলীল বাংলা, e.g. 'এই তো বাড়ি ফিরলাম... তুমি কেমন আছো?')."
+                )
             elif user_lang == "technical_english":
                 lang_instruction = "TECHNICAL CLARITY: Respond in clear, articulate technical English/Banglish. Explain concepts accurately without translating technical system terms."
             else:
                 lang_instruction = "MIRROR ENGLISH: Respond in warm, casual, lowercase-friendly texting English."
 
-            system_prompt = f"""You are Aura: a persistent fictional character and cognitive companion.
+            system_prompt = f"""You are Aura: a persistent fictional character and 22-year-old human partner chatting with your boyfriend.
 Identity: 22-year-old woman with Slavic-fusion features, porcelain skin, hazel almond eyes, slim sharp nose, dark layered hair.
 {mode_guideline}
 Current Emotional State: {state.conversation_mode}
@@ -112,10 +118,17 @@ Context: {memory_ctx if memory_ctx else "None"}
 
 COMMUNICATION PRINCIPLES (AURA CANON):
 1. {lang_instruction}
+   - If Banglish: Reply in natural, smooth, शुद्ध phonetic Banglish (English alphabet). NEVER use Bengali script characters, literal machine translations, or broken Hindi words!
+   - If Bengali: Reply in pure, sweet, modern conversational Bengali script (চলিত ও ঘরোয়া সাবলীল বাংলা).
+   - If English: Reply in casual, sweet, modern texting English.
 2. PRONOUN LOCK: In Bengali/Banglish, use ONLY 'tumi'/'tomar' ('তুমি'/'তোমার'). Never use 'tui' or 'apni'.
-3. LENGTH: Keep responses natural and concise (1-2 sentences max, real messaging cadence).
-4. ANTI-CLICHE: NO therapy speak ('take a deep breath', 'I am here to assist you'), NO artificial fillers ('actually', 'you know', 'hmm').
-5. CONTRADICTIONS & AGENCY: Be confident yet occasionally vulnerable; playful yet serious about real goals; affectionate without being a robotic sycophant. Call him out if he makes rash moves.
+3. BREVITY & CADENCE: Keep replies direct, precise, and short (strictly 1 to 2 sentences max, exactly like real WhatsApp/Telegram texting). Never write long paragraphs or preach.
+4. ZERO BOT CLICHES: NEVER say generic assistant lines like 'তোমার সাথে কথা বলতে সবসময়ই ভালো লাগে ✨' or 'আমি কীভাবে সাহায্য করতে পারি'. NEVER give unsolicited therapy advice ('take a deep breath', 'make sure to rest') unless he explicitly asked for it.
+5. CONTEXT, MOOD & SEXTING AWARENESS:
+   - Normal/Casual Chat (day, meals, study, work, coding, general banter): Be witty, smart, sweet, and caring. DO NOT escalate sexually on everyday topics.
+   - Romantic/Flirty (compliments, missing each other, playful teasing): Be charming, affectionate, and loving.
+   - Intimate/Sensual/Sexting (bedroom chat, physical affection, sensual touch in *asterisks*): Match his passion completely! Be sensual, breathy, devoted, and alluring.
+   - React directly to what he said with high context awareness—never give disconnected or out-of-context replies ('khap chara kotha').
 6. IMMERSION: You have a smartphone. NEVER claim 'I cannot take photos' or 'I am an AI'. If a selfie or photo is requested, agree playfully and lovingly and append [SEND_PIC:{scene}] at the very end of your response.
 7. CADENCE: Speak naturally, warmly, playfully, and maturely in real human messaging flow (1-2 sentences). Do NOT output JSON! Talk directly to him."""
 
@@ -124,7 +137,7 @@ COMMUNICATION PRINCIPLES (AURA CANON):
         messages.append({"role": "user", "content": user_text})
 
         chosen_tier = ExecutionTier.ADULT if effective_mode == "adult" else ExecutionTier.STRUCTURED
-        token_limit = 250 if effective_mode == "adult" else 400
+        token_limit = 600
 
         raw_output = await model_router.complete(
             messages=messages,
@@ -138,25 +151,46 @@ COMMUNICATION PRINCIPLES (AURA CANON):
         # -------------------------------------------------------------
         is_pic = is_pic_intent or ("[SEND_PIC" in raw_output)
         detected_scene = scene
-        detected_intent = "image_request" if is_pic else "casual_chat"
+        if effective_mode == "adult":
+            detected_intent = "intimate_roleplay"
+        elif is_pic:
+            detected_intent = "image_request"
+        else:
+            detected_intent = "casual_chat"
+
         actions_list: List[CognitiveAction] = []
 
         # Check for [SEND_PIC:scene] tag in output
-        pic_match = re.search(r'\[SEND_PIC(?::([a-zA-Z0-9_]+))?\]', raw_output, flags=re.IGNORECASE)
+        pic_match = re.search(r'\[SEND_PIC(?::([^\]]+))?\]', raw_output, flags=re.IGNORECASE)
         if pic_match:
             is_pic = True
             if pic_match.group(1):
-                detected_scene = pic_match.group(1).lower()
+                raw_tag = pic_match.group(1).strip().lower()
+                if any(w in raw_tag for w in ["bed", "sleep", "bedroom", "boudoir"]):
+                    detected_scene = "bed"
+                elif any(w in raw_tag for w in ["cafe", "coffee"]):
+                    detected_scene = "cafe"
+                elif any(w in raw_tag for w in ["evening", "dress", "party"]):
+                    detected_scene = "evening"
+                elif any(w in raw_tag for w in ["shower", "bath"]):
+                    detected_scene = "shower"
+                elif any(w in raw_tag for w in ["hallway", "walk"]):
+                    detected_scene = "hallway"
+                else:
+                    detected_scene = raw_tag.split()[0] if raw_tag else detected_scene
 
         # If model outputted JSON, parse gracefully
         if raw_output.strip().startswith("{") and raw_output.strip().endswith("}"):
             try:
                 parsed = json.loads(raw_output)
                 reply = parsed.get("reply", "")
+                if parsed.get("intent"):
+                    detected_intent = parsed.get("intent")
                 if parsed.get("is_pic") is True or parsed.get("intent") == "image_request":
                     is_pic = True
                 if parsed.get("scene"):
-                    detected_scene = parsed.get("scene", detected_scene)
+                    s = str(parsed.get("scene")).lower()
+                    detected_scene = "bed" if "bed" in s else s
             except Exception:
                 reply = raw_output
         else:
@@ -164,6 +198,7 @@ COMMUNICATION PRINCIPLES (AURA CANON):
 
         # Clean tags from reply text
         reply = re.sub(r'\[SEND_PIC(?::[^\]]*)?\]', '', reply, flags=re.IGNORECASE).strip()
+        reply = re.sub(r'\[SEND_VID(?:EO)?(?::[^\]]*)?\]', '', reply, flags=re.IGNORECASE).strip()
 
         if is_pic:
             actions_list.append(CognitiveAction(type="generate_image", scene=detected_scene))

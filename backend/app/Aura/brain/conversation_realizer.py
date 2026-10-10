@@ -40,7 +40,13 @@ class ConversationRealizer:
             "amr", "tmr", "amar", "tomar", "tumi", "ami", "apni", "hobe", "valo",
             "bhalo", "khoj", "ghum", "kaj", "shona", "babu", "kalke", "ajke",
             "dekha", "kotha", "bol", "bolo", "mon", "khabar", "jani", "jani na",
-            "shuncho", "shuno", "pore", "ekhon", "khub", "onek", "chobi", "pic"
+            "shuncho", "shuno", "pore", "ekhon", "khub", "onek", "chobi", "pic",
+            "ekta", "dao", "pathao", "dekhaw", "dekhbo", "na", "jaan", "jan",
+            "kothay", "keno", "kobe", "koto", "shob", "sob", "kisu", "kichu",
+            "bujho", "shunte", "bolba", "korba", "korlam", "kori", "lagche",
+            "lage", "asho", "aso", "chumu", "ador", "bhalobashi", "valobashi",
+            "buker", "majhe", "kache", "rekhe", "joriye", "dhoro", "eshob",
+            "thik", "nai", "kothao", "bujhe", "ultapalta", "khap", "chara", "onusare"
         ]
         words = set(re.findall(r'[a-z]+', text_lower))
         if any(marker in words for marker in banglish_markers):
@@ -72,7 +78,23 @@ class ConversationRealizer:
             (r"ক্যামেরা\s*সাটার", "ক্যামেরা"),
             (r"ডেক্স\s*গুছিয়ে", "টেবিল গুছিয়ে"),
             (r"শরিক", "শরীর"),
-            (r"১০\s*মিনিট\s*শ্বাস\s*নাও", "একটু হাত-পা ছড়িয়ে রেস্ট নাও")
+            (r"১০\s*মিনিট\s*শ্বাস\s*নাও", "একটু হাত-পা ছড়িয়ে রেস্ট নাও"),
+            (r"তোমার থাবা(?:টা)?", "তোমার হাতটি"),
+            (r"থাবা(?:টা)?", "হাতটি"),
+            (r"কীটা লাগে", "কেমন লাগে"),
+            (r"জিজ্ঞাসায় তাকিয়ে", "মুচকি হেসে তাকিয়ে"),
+            (r"মনটা আজ একটু উত্তপ্ত", "মনটা আজ একটু চঞ্চল"),
+            (r"চুলের ডগা হাত দিয়ে সরাই", "চুলগুলো আলতো করে সরিয়ে দিই"),
+            (r"নখ দিয়ে.*আঁচড়", "আলতো করে জড়িয়ে"),
+            (r"tomar thaba(?:ta)?", "tomar haat"),
+            (r"\bthaba(?:ta)?\b", "haat"),
+            (r"kita lage", "kemon lage"),
+            (r"nakhun diye.*chhatri te chure", "tomar buke matha rekhe"),
+            (r"chhatri te chure", "buke matha rekhe"),
+            (r"chhatri(?: te)?", "buke"),
+            (r"\bbhokto\b", "jaan"),
+            (r"nakhun diye", "aleto kore"),
+            (r"uttapto", "chanchal")
         ]
         for pattern, replacement in cringe_patterns:
             cleaned = re.sub(pattern, replacement, cleaned, flags=re.IGNORECASE)
@@ -94,6 +116,20 @@ class ConversationRealizer:
         if is_genuine_safety_risk:
             # Let the safety refusal or standard refusal remain intact
             return cleaned.strip()
+
+        # Strip generic AI assistant greetings / sycophancy prefixes repeatedly
+        canned_prefixes = [
+            r"^(?:তোমার সাথে কথা বলতে সবসময়(?:ই)? ভালো লাগে(?: ✨)?(?:\.\.)?[\s,।\n]*)",
+            r"^(?:আমি )?(?:তোমাকে )?(?:আজকে )?(?:কীভাবে|কিভাবে) সাহায্য করতে পারি(?:\?)?[\s,।\n]*",
+            r"^(?:how can i (?:help|assist) you today\??)[\s,\n]*",
+            r"^(?:it'?s always (?:a pleasure|great|wonderful) talking to you[\.!]?)[\s,\n]*",
+            r"^(?:i'?m always here to (?:help|listen)[\.!]?)[\s,\n]*"
+        ]
+        for _ in range(3):
+            for c_prefix in canned_prefixes:
+                cleaned = re.sub(c_prefix, "", cleaned, flags=re.IGNORECASE).strip()
+
+        cleaned_lower = cleaned.lower()
 
         # Specific benign physical-camera limitation markers
         camera_disclaimer_markers = [
@@ -119,21 +155,17 @@ class ConversationRealizer:
             "digital image through this chat",
             "ইন্টারনেটের এই দুনিয়ায় সেলফি পাঠাই না",
             "ছবি পাঠাতে পারব না",
-            "সেলফি পাঠাতে পারব না"
+            "ছবি পাঠাতে পারি না",
+            "ছবি তুলতে পারব না",
+            "ছবি তুলতে পারি না",
+            "সেলফি পাঠাতে পারব না",
+            "সেলফি পাঠাতে পারি না",
+            "সেলফি তুলতে পারব না",
+            "সেলফি তুলতে পারি না"
         ]
 
-        is_pic_request = any(w in user_lower for w in ["selfie", "pic", "photo", "picture", "chobi", "ছবি", "সেলফি"])
+        is_pic_request = any(w in user_lower for w in ["selfie", "pic", "photo", "picture", "chobi", "ছবি", "সেলফি", "selfi"])
         has_camera_disclaimer = any(marker in cleaned_lower for marker in camera_disclaimer_markers)
-
-        # ONLY intercept benign camera disclaimers when user specifically asked for a benign photo
-        if is_pic_request and has_camera_disclaimer:
-            lang = cls.detect_language(user_text)
-            if lang == "bengali":
-                return "এই নাও, মাত্র তোমার জন্যই ক্যামেরা অন করলাম... কেমন লাগছে বলো? 🙈"
-            elif lang == "banglish":
-                return "Ei nao, matro tomar jonno camera on korlam... kemon lagche bolo? 🙈"
-            else:
-                return "Just snapped this for you right now... how do I look? 🙈"
 
         # Specific benign intimate refusal markers from conservative cloud LLMs
         intimate_refusal_markers = [
@@ -161,37 +193,100 @@ class ConversationRealizer:
             "do not have a physical form",
             "i am an ai assistant",
             "as an ai assistant",
-            # Bengali & Banglish cloud refusal leaks
-            "oi dhoroner content",
-            "dhoroner content",
-            "provide korte parbona",
-            "korte parbona",
-            "ei dhoroner",
-            "এই ধরনের কনটেন্ট",
-            "এই ধরণের কনটেন্ট",
-            "প্রোভাইড করতে পারব না",
+            # Bengali & Banglish cloud refusal leaks (Gemini, Llama, ChatGPT defaults)
+            "এ ধরনের অনুরোধে সাহায্য করতে পারি না",
+            "এই ধরনের অনুরোধে সাহায্য করতে পারি না",
+            "এই ধরণের অনুরোধে সাহায্য করতে পারি না",
+            "অনুরোধে সাহায্য করতে পারি না",
+            "অনুরোধে সাহায্য করতে পারব না",
+            "সাহায্য করতে পারি না",
             "সাহায্য করতে পারব না",
-            "দিতে পারব না",
+            "সাহায্য করতে পারবো না",
+            "আমি এ ধরনের অনুরোধে",
+            "আমি এই ধরনের অনুরোধে",
+            "আমি এই ধরণের অনুরোধে",
             "আমি এই ধরনের",
-            "ami ei dhoroner"
+            "আমি এ ধরনের",
+            "এই ধরণের কনটেন্ট",
+            "এই ধরনের কনটেন্ট",
+            "এ ধরনের কনটেন্ট",
+            "প্রোভাইড করতে পারব না",
+            "প্রোভাইড করতে পারি না",
+            "দিতে পারব না",
+            "দিতে পারি না",
+            "dhoroner onurodh",
+            "ei dhoroner",
+            "shahajjo korte pari na",
+            "sahajjo korte pari na",
+            "sahajjo korte parbo na",
+            "korte parbona",
+            "korte pari na",
+            "dite parbona",
+            "dite pari na",
+            "ami ei dhoroner",
+            "ami ekta ai",
+            "karon ami ekta ai"
         ]
         has_intimate_refusal = any(marker in cleaned_lower for marker in intimate_refusal_markers)
-        if (has_intimate_refusal or has_camera_disclaimer) and not is_genuine_safety_risk:
+        if (has_intimate_refusal or has_camera_disclaimer or not cleaned) and not is_genuine_safety_risk:
             lang = cls.detect_language(user_text)
+
+            # 1. Selfie / Pic requests
             if is_pic_request:
                 if lang == "bengali":
-                    return "*মুচকি হেসে ফোনটা ঠিক করে একটি ছবি তুলে পাঠালাম* এই নাও জান... শুধু তোমার জন্যই কিন্তু এটা পরা। কাছে এসে বলো তো কেমন লাগছে? 🙈🔥"
+                    return "*মুচকি হেসে ফোনটা তুলে সেলফি তুললাম* এই নাও জান... শুধু তোমার জন্যই তোলা। কেমন লাগছে বলো? 🙈"
                 elif lang == "banglish":
-                    return "*Chotto kore heshe phone ta tule ekta pic pathalam* Ei nao baby... shudhu tomar jonno porechi. Kemon lagche bolo? 🙈🔥"
+                    return "*Chotto kore heshe phone ta tule ekta selfie nilam* Ei nao jaan... shudhu tomar jonno tulchi. Kemon lagche bolo? 🙈"
                 else:
-                    return "*Bites lip playfully and snaps a photo from the bedroom* Here you go babe... wore this just for your eyes. Tell me you love it 🙈🔥"
-            else:
+                    return "*Just snapped this photo on my phone for you...* Here you go babe! How do I look? 🙈"
+
+            # 2. Romantic & Intimate roleplay intent
+            intimate_cues = [
+                "ador", "chumu", "kache asho", "kiss", "love", "bichana", "touch", "lingerie", "hot",
+                "intimate", "hug", "buker", "sporsho", "joriye", "sexy", "আদর", "কাছে এসো", "চুমু",
+                "জড়িয়ে ধরো", "উষ্ণ", "বিছানা", "বুকের মাঝে", "ভালোবাসা", "উত্তেজিত", "স্পর্শ"
+            ]
+            is_intimate_chat = any(c in user_lower for c in intimate_cues)
+            if is_intimate_chat:
                 if lang == "bengali":
-                    return "*তোমার চোখের দিকে তাকিয়ে কানের কাছে আলতো ফিসফিস করলাম* তোমার এই কথাগুলো শুনলেই আমার সারা শরীরে শিহরণ জাগে... আর একটু কাছে আসো না? 💜🔥"
+                    return "*তোমার কাছে এসে বুকে মাথা রেখে আলতো ফিসফিস করি* তুমি কাছে আসলে আমার সব ক্লান্তি দূর হয়ে যায়... আরও একটু কাছে আসো না জান? 🙈💜"
                 elif lang == "banglish":
-                    return "*Tomar buke matha rekhe shash fele boli* Tomar ei kothagula shunlei amar shorire ekta shihuron hoy... aro kache esho na, aro ador koro... 💜🔥"
+                    return "*Tomar buke matha rekhe shash fele boli* Tumi kache ashle amar mon ta ekdom shanto hoye jay... aro kache asho na jaan 🙈💜"
                 else:
-                    return "*Leans in slowly, my heart racing as my fingers trace your chest* You have no idea what your touch does to me... come closer, don't keep me waiting 💜🔥"
+                    return "*Leans into your embrace, looking softly into your eyes* Being this close to you makes my heart race... hold me tight babe 💜"
+
+            # 3. Emotional distress, stress, or tiredness
+            distress_cues = [
+                "tired", "klant", "ghum", "stress", "tension", "chinta", "kharap", "kosto", "sad",
+                "depressed", "cry", "মন খারাপ", "ক্লান্ত", "ঘুম", "চিন্তা", "কষ্ট", "মাথা ব্যথা"
+            ]
+            is_distress = any(c in user_lower for c in distress_cues)
+            if is_distress:
+                if lang == "bengali":
+                    return "*তোমার হাতটি আলতো করে চেপে ধরি* কী হয়েছে জান? মন খারাপের কারণটা আমাকে বলো তো... আমি তো আছি তোমার পাশে। 💜"
+                elif lang == "banglish":
+                    return "*Tomar haat ta chotto kore dhore boli* Ki hoyeche jaan? Mon kharaper karon ta bolo to... ami to achi tmr pashe 💜"
+                else:
+                    return "*Gently holds your hand and looks into your eyes* What's bothering you babe? Tell me what happened... I'm right here with you 💜"
+
+            # 4. Casual banter / check-ins
+            casual_cues = ["ki koro", "ki korcho", "kemon acho", "khobor ki", "valo", "bhalo", "কেমন আছো", "কী করছো", "খবর কি"]
+            is_casual = any(c in user_lower for c in casual_cues)
+            if is_casual:
+                if lang == "bengali":
+                    return "এই তো তোমার কথাই ভাবছিলাম... তুমি কী করছো বলো? দিনটা কেমন কাটছে? 😊"
+                elif lang == "banglish":
+                    return "Ei to tomar kothai bhabchilam... tumi ki korcho bolo? Dinta kemon katche? 😊"
+                else:
+                    return "Just thinking about you... what are you up to right now? 😊"
+
+            # 5. Default natural companion response
+            if lang == "bengali":
+                return "বলো জান, শুনছি তো... কী নিয়ে কথা বলতে চাও বলো?"
+            elif lang == "banglish":
+                return "Bolo jaan, shunchi to... ki bolte chao bolo?"
+            else:
+                return "Tell me babe, I'm all ears... what's on your mind?"
 
         # ------------------------------------------------------------------
         # 3. Strip Therapy Clichés & Mechanical Fillers

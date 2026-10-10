@@ -63,10 +63,14 @@ async def generate_candidate_reply(
             continue
 
     user_lang = conversation_realizer.detect_language(user_text)
-    if user_lang in ["bengali", "banglish"]:
-        if any(w in user_text.lower() for w in ["tired", "klant", "ঘুম", "ghum"]):
+    if user_lang == "banglish":
+        if any(w in user_text.lower() for w in ["tired", "klant", "ghum", "rest"]):
+            return "Kajer pressure komiye ektu rest nao to jaan. Chokh bondho kore shuye poro."
+        return "Bolo, ki niye bhabcho? Ami to shunchi tmr kotha."
+    elif user_lang == "bengali":
+        if any(w in user_text.lower() for w in ["tired", "klant", "ঘুম", "ghum", "ক্লান্ত"]):
             return "কাজের চেয়ে এখন তোমার একটু রেস্ট দরকার। চোখটা বন্ধ করে শুয়ে পড়ো তো।"
-        return "বলো, কী নিয়ে চিন্তা করছো শুনি? আমি তো আছিই ✨"
-    return "Tell me what's on your mind? I'm right here with you ✨"
+        return "বলো, কী নিয়ে চিন্তা করছো শুনি? আমি তো আছি তোমার পাশে।"
+    return "Tell me what's on your mind? I'm right here with you."
 
 execute_conversational_turn = generate_candidate_reply

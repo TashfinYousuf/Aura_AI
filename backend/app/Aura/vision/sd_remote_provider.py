@@ -32,7 +32,7 @@ class RemoteStableDiffusionProvider:
             return False
         try:
             headers = {"ngrok-skip-browser-warning": "any", "User-Agent": "AuraClient/1.0"}
-            async with httpx.AsyncClient(timeout=5.0) as client:
+            async with httpx.AsyncClient(timeout=2.5) as client:
                 res = await client.get(f"{url}/sdapi/v1/options", headers=headers)
                 return res.status_code == 200
         except Exception:
@@ -94,6 +94,11 @@ class RemoteStableDiffusionProvider:
     ) -> Optional[str]:
         base_url = self.get_effective_url()
         if not base_url:
+            return None
+
+        # Pre-flight check: ensure remote server is reachable before assembling payload
+        if not await self.is_available():
+            print(f"ℹ️ [COLAB SD STATUS]: Remote URL {base_url} is currently offline. Routing to local identity synth provider...")
             return None
 
         # Determine target resolution

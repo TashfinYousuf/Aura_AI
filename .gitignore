@@ -17,3 +17,9 @@ __pycache__/
 # Frontend (If in same repo)
 node_modules/
 .next/
+
+# Generated assets & System files
+backend/app/static/generated/
+.DS_Store
+*.DS_Store
+backend/.DS_Store
