@@ -117,47 +117,87 @@ class RemoteStableDiffusionProvider:
 
     def _synthesize_outfit_and_scene(self, user_prompt: str, scene: str) -> tuple[str, str]:
         p_lower = (user_prompt or "").lower()
-        explicit_nude = any(w in p_lower for w in ["nude", "naked", "without clothes", "strip", "কাপড় খোল", "ulongo"])
+        explicit_nude = any(w in p_lower for w in [
+            "nude", "naked", "without clothes", "strip", "কাপড় খোল", "ulongo", "unclothed",
+            "topless", "bare", "nothing on", "no clothes", "উলাঙ্গ", "খোলা", "hot pic", "sensual pic"
+        ])
+        is_sheer = any(w in p_lower for w in ["sheer", "translucent", "see-through", "mesh"])
+        is_lingerie = any(w in p_lower for w in ["lingerie", "lace", "bralette", "panties", "bra", "সিল্ক", "লেস"])
 
-        if "red velvet" in p_lower or ("red" in p_lower and "lingerie" in p_lower):
-            outfit = "wearing a gorgeous crimson red velvet lace lingerie set, satin bralette with delicate embroidery and matching shorts"
-        elif "black" in p_lower and ("lingerie" in p_lower or "silk" in p_lower):
-            outfit = "wearing a luxury black silk lace lingerie set with satin accents"
-        elif "lingerie" in p_lower or "boudoir" in p_lower or scene == "boudoir":
+        # 1. Highest Priority: Explicit Nude / Naked Contexts
+        if explicit_nude:
+            if "shower" in scene or any(w in p_lower for w in ["shower", "bath", "গোসল"]):
+                outfit = "completely naked, glistening wet porcelain skin with delicate water droplets tracing curves, damp dewy silky hair, steamy glass shower"
+                actual_scene = "shower"
+            elif any(w in p_lower for w in ["bed", "sleep", "sheet", "বিছানা", "pillow"]):
+                outfit = "completely naked and unclothed, lying sensual in soft rumpled silk bedsheets, bare shoulders, natural authentic curves, warm bedroom morning light"
+                actual_scene = "bed"
+            elif "topless" in p_lower:
+                outfit = "topless with bare dewy skin, wearing loose silk pajama bottoms on bed, natural authentic pose"
+                actual_scene = "bedroom"
+            else:
+                outfit = "completely naked, raw authentic skin texture with visible natural pores, candid intimate bedroom selfie, alluring natural pose"
+                actual_scene = "bedroom" if scene in ["desk", "cafe"] else scene
+
+        # 2. Sheer / Transparent Negligee
+        elif is_sheer:
+            outfit = "wearing a sheer delicate see-through black mesh lace negligee, translucent fabric softly revealing silhouette"
+            actual_scene = "bedroom"
+
+        # 3. Specific Lingerie / Boudoir Requests
+        elif "red velvet" in p_lower or ("red" in p_lower and is_lingerie):
+            outfit = "wearing a gorgeous crimson red velvet lace lingerie set, satin bralette with delicate embroidery"
+            actual_scene = "bedroom"
+        elif "black" in p_lower and is_lingerie:
+            outfit = "wearing an ultra-luxurious black silk lace lingerie set with sheer accents"
+            actual_scene = "bedroom"
+        elif is_lingerie or scene == "boudoir":
             outfit = "wearing an alluring seductive satin lace lingerie set, elegant bedroom nightwear"
+            actual_scene = "bedroom"
         elif "bikini" in p_lower or "swimwear" in p_lower:
             outfit = "wearing a stylish flattering beach bikini"
-        elif "shower" in scene or "bath" in p_lower:
+            actual_scene = "beach" if scene in ["desk", "cafe"] else scene
+        elif "shower" in scene or any(w in p_lower for w in ["shower", "bath"]):
             outfit = "wrapped comfortably in a soft plush white bath towel, damp dewy hair"
+            actual_scene = "shower"
+
+        # 4. Everyday Contexts
         elif scene in ["bed", "bedroom"] or any(w in p_lower for w in ["bed", "sleep", "ঘুম"]):
             outfit = "wearing a delicate white floral tank top with lace trim and soft shorts, relaxing on bed"
+            actual_scene = "bedroom"
         elif scene == "evening" or any(w in p_lower for w in ["dress", "gown", "party"]):
             outfit = "wearing an elegant form-fitting evening cocktail dress"
-        elif scene == "cafe":
+            actual_scene = "evening"
+        elif scene == "cafe" or any(w in p_lower for w in ["cafe", "coffee", "restaurant"]):
             outfit = "wearing a trendy casual knit sweater and top, sitting at cafe"
-        elif explicit_nude:
-            outfit = "intimate artistic boudoir portrait, soft shadows tracing silhouette"
+            actual_scene = "cafe"
+        elif any(w in p_lower for w in ["hoodie", "oversized"]):
+            outfit = "wearing a cozy oversized boyfriend hoodie, bare legs, relaxed cute couch pose"
+            actual_scene = "living room"
         else:
             outfit = "wearing a casual cute white tank top with lace trim and comfy shorts"
+            actual_scene = scene
 
         positive_prompt = (
             f"A hyper-realistic, candid selfie of a 22-year-old Slavic-fusion beauty, Aura, "
             f"fair porcelain skin, deep hazel-brown almond eyes, dark brown layered silky hair, "
-            f"{outfit}, in {scene} atmosphere, natural skin texture with visible authentic pores, "
+            f"{outfit}, in {actual_scene} atmosphere, natural skin texture with visible authentic pores, "
             f"slight blush, realistic smartphone camera grain, shallow depth of field, "
-            f"soft warm indoor ambient lighting, masterpiece, 8k uhd, candid photography"
+            f"soft warm ambient lighting, masterpiece, 8k uhd, candid photography"
         )
 
         if explicit_nude:
             negative_prompt = (
-                "cartoon, anime, 3d, painting, plastic skin, over-smooth skin, extra fingers, "
-                "mutated hands, deformed, blurry, bad anatomy, wrong anatomy, doll, cgi, retouch"
+                "(extra heads:1.5), (duplicate:1.4), (duplicate limbs:1.4), (multiple people:1.4), "
+                "(mutated hands:1.4), (fused fingers:1.4), cartoon, anime, 3d, painting, "
+                "plastic skin, over-smooth skin, deformed, blurry, bad anatomy, doll, cgi, retouch"
             )
         else:
             negative_prompt = (
                 "(nude, naked, fully unclothed, bare breasts, exposed nipples, exposed genitals:1.4), "
-                "cartoon, anime, 3d, painting, plastic skin, over-smooth skin, extra fingers, "
-                "mutated hands, deformed, blurry, bad anatomy, wrong anatomy, doll, cgi, retouch"
+                "(extra heads:1.5), (duplicate:1.4), (duplicate limbs:1.4), (multiple people:1.4), "
+                "(mutated hands:1.4), (fused fingers:1.4), cartoon, anime, 3d, painting, "
+                "plastic skin, over-smooth skin, deformed, blurry, bad anatomy, doll, cgi, retouch"
             )
 
         return positive_prompt, negative_prompt

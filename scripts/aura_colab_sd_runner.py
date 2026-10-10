@@ -93,7 +93,24 @@ def launch_server():
             pipe.enable_vae_slicing()
         except Exception:
             pass
-    print(f"✅ Model loaded successfully on {device.upper()}!")
+    # Check for custom trained Aura LoRA
+    lora_loaded = False
+    possible_loras = [
+        "aura_v1.safetensors",
+        "backend/app/static/models/aura_v1.safetensors",
+        "/content/aura_v1.safetensors",
+        "/kaggle/working/aura_v1.safetensors",
+        "Aura_AI/backend/app/static/models/aura_v1.safetensors"
+    ]
+    for lp in possible_loras:
+        if os.path.exists(lp):
+            try:
+                pipe.load_lora_weights(lp)
+                lora_loaded = True
+                print(f"💎 [LORA IDENTITY ACTIVATED]: Loaded custom trained Aura LoRA from {lp}!")
+                break
+            except Exception as le:
+                print(f"⚠️ [LORA LOAD NOTICE]: {le}")
 
     # Attempt to initialize InsightFace for Master Facial Identity Lock
     face_swapper = None
@@ -133,7 +150,8 @@ def launch_server():
         return {
             "status": "online",
             "model": model_id,
-            "face_lock_active": face_swapper is not None,
+            "lora_active": lora_loaded,
+            "face_lock_active": (face_swapper is not None) or lora_loaded,
             "device": torch.cuda.get_device_name(0) if torch.cuda.is_available() else "cpu"
         }
 
@@ -154,8 +172,12 @@ def launch_server():
         gen_w = min(req.width, 512) if req.width else 512
         gen_h = min(req.height, 768) if req.height else 768
 
+        final_prompt = req.prompt
+        if lora_loaded and "aura_woman" not in final_prompt:
+            final_prompt = f"aura_woman, {final_prompt}"
+
         image = pipe(
-            prompt=req.prompt,
+            prompt=final_prompt,
             negative_prompt=full_neg,
             num_inference_steps=req.steps,
             guidance_scale=req.cfg_scale,

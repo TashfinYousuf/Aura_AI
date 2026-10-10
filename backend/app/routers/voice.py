@@ -294,23 +294,20 @@ async def websocket_endpoint(websocket: WebSocket, user_id: str, token: Optional
                     except Exception:
                         pass
 
-            # 4. Human Thinking & Reading Delay (No 0ms cold robot replies)
-            from app.Aura.brain.presence_engine import presence_engine
-            curr_presence = presence_engine.get_current_presence()
-            natural_delay = curr_presence.get("natural_reply_delay", 1.0)
-            await asyncio.sleep(natural_delay)
-
-            # Notify Frontend Streaming Starts
+            # 4. Immediate Typing Indicator (Immediately shows 1-2-3 typing animation, zero frontend freeze)
             await websocket.send_text(json.dumps({"type": "message_start"}))
 
             # 5. Run Single Cognitive Pipeline Turn
             turn = await cognitive_pipeline.process_turn(user_id, user_text, history, presentation_mode=mode)
 
-            # 6. Stream Text Word-by-Word (Organic human keystroke pacing)
+            # Brief natural reading/thinking micro-pause (250ms)
+            await asyncio.sleep(0.25)
+
+            # 6. Stream Text Word-by-Word (Snappy, smooth 25ms keystroke streaming effect)
             words = turn.reply_text.split(" ")
             for w in words:
                 await websocket.send_text(json.dumps({"type": "token", "content": w + " "}))
-                await asyncio.sleep(0.045)  # Natural human typing cadence (45ms per word)
+                await asyncio.sleep(0.025)
 
             # 7. Visual Identity Vault Generation
             image_url = None
