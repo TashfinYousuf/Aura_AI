@@ -203,13 +203,17 @@ def launch_server():
     # Try ngrok first
     if token:
         try:
+            try:
+                ngrok.kill()
+            except Exception:
+                pass
             ngrok.set_auth_token(token)
             tunnel = ngrok.connect(8000)
             public_url = tunnel.public_url
         except Exception as e:
-            print(f"⚠️ [NGROK ERROR]: {e}")
+            print(f"⚠️ [NGROK NOTICE]: {e}")
 
-    # Fallback to Cloudflare Tunnel (100% free, no token needed, works on Colab & Kaggle)
+    # Fallback to Cloudflare Tunnel (100% free, unlimited, no token needed, works on Colab & Kaggle)
     if not public_url:
         print("🌐 Starting Cloudflare Tunnel (100% free, unlimited, no token needed)...")
         try:
@@ -217,7 +221,7 @@ def launch_server():
             if not os.path.exists("cloudflared"):
                 subprocess.run("wget -q https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 -O cloudflared && chmod +x cloudflared", shell=True)
             cf_proc = subprocess.Popen(["./cloudflared", "tunnel", "--url", "http://127.0.0.1:8000"], stderr=subprocess.PIPE, text=True)
-            for _ in range(20):
+            for _ in range(40):
                 line = cf_proc.stderr.readline()
                 if "trycloudflare.com" in line:
                     match = re.search(r"https://[a-zA-Z0-9\-]+\.trycloudflare\.com", line)
@@ -233,8 +237,24 @@ def launch_server():
     print(f"SD_REMOTE_URL={public_url or 'http://localhost:8000'}")
     print("=" * 60)
 
-    nest_asyncio.apply()
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    import threading
+    import time
+
+    def start_uvicorn():
+        config = uvicorn.Config(app, host="0.0.0.0", port=8000, log_level="info")
+        server = uvicorn.Server(config)
+        server.run()
+
+    server_thread = threading.Thread(target=start_uvicorn, daemon=True)
+    server_thread.start()
+    print("🚀 [SERVER ONLINE]: FastAPI is listening on http://0.0.0.0:8000")
+    print("✨ Aura Remote SD Server is running and waiting for requests!")
+
+    try:
+        while server_thread.is_alive():
+            time.sleep(1)
+    except KeyboardInterrupt:
+        print("\n🛑 Shutting down Aura server...")
 
 if __name__ == "__main__":
     launch_server()
