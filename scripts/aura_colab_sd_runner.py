@@ -97,9 +97,15 @@ def launch_server():
     lora_loaded = False
     possible_loras = [
         "aura_v1.safetensors",
-        "backend/app/static/models/aura_v1.safetensors",
-        "/content/aura_v1.safetensors",
         "/kaggle/working/aura_v1.safetensors",
+        "/kaggle/working/Aura_AI/aura_v1.safetensors",
+        "/kaggle/working/Aura_AI/backend/app/static/models/aura_v1.safetensors",
+        "/kaggle/working/Aura_AI/backend/app/static/models/aura_lora",
+        "/content/aura_v1.safetensors",
+        "/content/Aura_AI/aura_v1.safetensors",
+        "/content/Aura_AI/backend/app/static/models/aura_v1.safetensors",
+        "backend/app/static/models/aura_v1.safetensors",
+        "backend/app/static/models/aura_lora",
         "Aura_AI/backend/app/static/models/aura_v1.safetensors"
     ]
     for lp in possible_loras:
@@ -245,6 +251,42 @@ def launch_server():
         img_b64 = base64.b64encode(buffered.getvalue()).decode("utf-8")
         return {"video": img_b64, "format": "animated_frame"}
 
+    import subprocess
+    import socket
+    import threading
+    import time
+    import re
+
+    def free_and_get_available_port(preferred_port: int = 8000) -> int:
+        """Kills orphaned tunnels/runners and returns a guaranteed available port."""
+        try:
+            subprocess.run("pkill -9 -f cloudflared", shell=True, stderr=subprocess.DEVNULL)
+            subprocess.run(f"fuser -k -9 {preferred_port}/tcp", shell=True, stderr=subprocess.DEVNULL)
+            time.sleep(0.5)
+        except Exception:
+            pass
+
+        def can_bind(p: int) -> bool:
+            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            try:
+                s.bind(("0.0.0.0", p))
+                s.close()
+                return True
+            except Exception:
+                return False
+
+        if can_bind(preferred_port):
+            return preferred_port
+
+        for candidate in range(preferred_port + 1, preferred_port + 25):
+            if can_bind(candidate):
+                print(f"ℹ️ Port {preferred_port} busy; switched dynamically to port {candidate}")
+                return candidate
+
+        return preferred_port
+
+    server_port = free_and_get_available_port(8000)
     token = os.getenv("NGROK_AUTHTOKEN", "3G1yJe40UpaD17GLtlqvsQVRnpn_3aEmdUVKLh7NYHUjRe4ZK")
     public_url = None
 
@@ -256,7 +298,7 @@ def launch_server():
             except Exception:
                 pass
             ngrok.set_auth_token(token)
-            tunnel = ngrok.connect(8000)
+            tunnel = ngrok.connect(server_port)
             public_url = tunnel.public_url
         except Exception as e:
             print(f"⚠️ [NGROK NOTICE]: {e}")
@@ -265,10 +307,9 @@ def launch_server():
     if not public_url:
         print("🌐 Starting Cloudflare Tunnel (100% free, unlimited, no token needed)...")
         try:
-            import subprocess, time, re
             if not os.path.exists("cloudflared"):
                 subprocess.run("wget -q https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 -O cloudflared && chmod +x cloudflared", shell=True)
-            cf_proc = subprocess.Popen(["./cloudflared", "tunnel", "--url", "http://127.0.0.1:8000"], stderr=subprocess.PIPE, text=True)
+            cf_proc = subprocess.Popen(["./cloudflared", "tunnel", "--url", f"http://127.0.0.1:{server_port}"], stderr=subprocess.PIPE, text=True)
             for _ in range(40):
                 line = cf_proc.stderr.readline()
                 if "trycloudflare.com" in line:
@@ -282,21 +323,29 @@ def launch_server():
 
     print("=" * 60)
     print(f"🔥 Copy this URL into your Aura .env and Render:")
-    print(f"SD_REMOTE_URL={public_url or 'http://localhost:8000'}")
+    print(f"SD_REMOTE_URL={public_url or f'http://localhost:{server_port}'}")
     print("=" * 60)
 
-    import threading
-    import time
-
+    server_error = None
     def start_uvicorn():
-        config = uvicorn.Config(app, host="0.0.0.0", port=8000, log_level="info")
-        server = uvicorn.Server(config)
-        server.run()
+        nonlocal server_error
+        try:
+            config = uvicorn.Config(app, host="0.0.0.0", port=server_port, log_level="info")
+            server = uvicorn.Server(config)
+            server.run()
+        except Exception as se:
+            server_error = se
+            print(f"⚠️ [UVICORN ERROR]: {se}")
 
     server_thread = threading.Thread(target=start_uvicorn, daemon=True)
     server_thread.start()
-    print("🚀 [SERVER ONLINE]: FastAPI is listening on http://0.0.0.0:8000")
-    print("✨ Aura Remote SD Server is running and waiting for requests!")
+    time.sleep(1.0)
+
+    if server_error:
+        print(f"❌ Server failed to bind: {server_error}")
+    else:
+        print(f"🚀 [SERVER ONLINE]: FastAPI is listening on http://0.0.0.0:{server_port}")
+        print("✨ Aura Remote SD Server is running and waiting for requests!")
 
     try:
         while server_thread.is_alive():

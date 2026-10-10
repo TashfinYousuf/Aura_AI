@@ -100,7 +100,7 @@ def train_lora(
     tokenizer = CLIPTokenizer.from_pretrained(MODEL_ID, subfolder="tokenizer")
     text_encoder = CLIPTextModel.from_pretrained(MODEL_ID, subfolder="text_encoder", torch_dtype=torch.float32)
     vae = AutoencoderKL.from_pretrained(MODEL_ID, subfolder="vae", torch_dtype=torch.float32)
-    unet = UNet2DConditionModel.from_pretrained(MODEL_ID, subfolder="unet")
+    unet = UNet2DConditionModel.from_pretrained(MODEL_ID, subfolder="unet", torch_dtype=torch.float32)
     noise_scheduler = DDPMScheduler.from_pretrained(MODEL_ID, subfolder="scheduler")
 
     vae.requires_grad_(False)
@@ -176,10 +176,10 @@ def train_lora(
     while global_step < steps:
         epoch += 1
         for batch in dataloader:
-            pixel_values = batch["pixel_values"].to(device, dtype=torch.float16 if device == "cuda" else torch.float32)
+            pixel_values = batch["pixel_values"].to(device, dtype=vae.dtype)
             input_ids = batch["input_ids"].to(device)
 
-            # Latent encoding
+            # Latent encoding (harmonized dtype with VAE)
             with torch.no_grad():
                 latents = vae.encode(pixel_values).latent_dist.sample()
                 latents = latents * vae.config.scaling_factor
@@ -225,16 +225,38 @@ def train_lora(
     print(f"💾 Saving trained LoRA to {OUTPUT_LORA_PATH}...")
     try:
         from safetensors.torch import save_file
-        # Extract LoRA state dict
-        peft_state_dict = unet.state_dict()
-        lora_state_dict = {k: v for k, v in peft_state_dict.items() if "lora" in k.lower()}
-        if not lora_state_dict:
-            lora_state_dict = peft_state_dict
-        save_file(lora_state_dict, str(OUTPUT_LORA_PATH))
-        save_file(lora_state_dict, "aura_v1.safetensors")
+        if use_peft:
+            peft_dir = OUTPUT_DIR / "aura_lora"
+            peft_dir.mkdir(parents=True, exist_ok=True)
+            unet.save_pretrained(str(peft_dir))
+
+            peft_state_dict = unet.state_dict()
+            lora_state_dict = {k: v for k, v in peft_state_dict.items() if "lora" in k.lower()}
+            if not lora_state_dict:
+                lora_state_dict = peft_state_dict
+        else:
+            lora_state_dict = {}
+            for name, proc in unet.attn_processors.items():
+                for k, v in proc.state_dict().items():
+                    lora_state_dict[f"{name}.{k}"] = v
+
+        save_targets = [
+            OUTPUT_LORA_PATH,
+            Path("aura_v1.safetensors"),
+            Path("/content/aura_v1.safetensors") if Path("/content").exists() else None,
+            Path("/kaggle/working/aura_v1.safetensors") if Path("/kaggle/working").exists() else None,
+            Path("/kaggle/working/Aura_AI/backend/app/static/models/aura_v1.safetensors") if Path("/kaggle/working").exists() else None
+        ]
+        for target in save_targets:
+            if target is not None:
+                try:
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    save_file(lora_state_dict, str(target))
+                except Exception:
+                    pass
+
         print("✨ [LORA TRAINING COMPLETE]: aura_v1.safetensors successfully created and locked!")
     except Exception as e:
-        # Fallback to standard torch save
         fallback_path = OUTPUT_DIR / "aura_v1.pt"
         torch.save(unet.state_dict(), str(fallback_path))
         torch.save(unet.state_dict(), "aura_v1.pt")
