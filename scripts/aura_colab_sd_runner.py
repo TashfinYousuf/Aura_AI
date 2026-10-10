@@ -25,7 +25,8 @@ def ensure_dependencies():
         ("uvicorn", "uvicorn"),
         ("pydantic", "pydantic"),
         ("PIL", "pillow"),
-        ("nest_asyncio", "nest-asyncio")
+        ("nest_asyncio", "nest-asyncio"),
+        ("pyngrok", "pyngrok")
     ]
     missing = []
     for mod, pkg in packages_to_check:
@@ -314,7 +315,7 @@ def launch_server():
     server_port = free_and_get_available_port(8000)
     public_url = None
 
-    # Safe optional ngrok attempt (never crashes if pyngrok is missing)
+    # Connect via ngrok with permanent static domain priority
     try:
         from pyngrok import ngrok
         token = os.getenv("NGROK_AUTHTOKEN", "3G1yJe40UpaD17GLtlqvsQVRnpn_3aEmdUVKLh7NYHUjRe4ZK")
@@ -324,8 +325,15 @@ def launch_server():
             except Exception:
                 pass
             ngrok.set_auth_token(token)
-            tunnel = ngrok.connect(server_port)
-            public_url = tunnel.public_url
+            try:
+                tunnel = ngrok.connect(server_port, domain="five-reporter-reunion.ngrok-free.dev")
+                public_url = tunnel.public_url
+                print("💎 [STATIC PERMANENT DOMAIN ACTIVE]: https://five-reporter-reunion.ngrok-free.dev")
+                print("ℹ️ This domain NEVER changes across restarts! .env will always remain valid!")
+            except Exception as de:
+                print(f"ℹ️ Static domain attempt notice: {de}")
+                tunnel = ngrok.connect(server_port)
+                public_url = tunnel.public_url
     except Exception as e:
         print(f"ℹ️ [NGROK BYPASS]: {e}. Proceeding directly with Cloudflare Tunnel...")
 
