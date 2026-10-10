@@ -36,21 +36,27 @@ class RemoteStableDiffusionProvider:
                 parts = re.split(r"[,;\s]+", str(val).strip())
                 raw_candidates.extend(parts)
 
-        # Inspect root .env directly to capture duplicate keys or multi-node configurations
-        env_path = Path(__file__).resolve().parent.parent.parent.parent / ".env"
-        if env_path.exists():
-            try:
-                with open(env_path, "r", encoding="utf-8") as f:
-                    for line in f:
-                        line = line.strip()
-                        if line.startswith("#"):
-                            continue
-                        if any(line.startswith(k + "=") for k in ["SD_REMOTE_URL", "COLAB_SD_API_URL", "KAGGLE_SD_URL", "SD_REMOTE_URLS"]):
-                            val = line.split("=", 1)[1].strip()
-                            parts = re.split(r"[,;\s]+", val)
-                            raw_candidates.extend(parts)
-            except Exception:
-                pass
+        # Dynamically inspect project root .env so URL updates are reflected instantly without server restart
+        env_candidates = [
+            Path(__file__).resolve().parent.parent.parent.parent.parent / ".env",
+            Path(__file__).resolve().parent.parent.parent.parent / ".env",
+            Path(".env").resolve(),
+            Path("../.env").resolve()
+        ]
+        for env_path in env_candidates:
+            if env_path.exists():
+                try:
+                    with open(env_path, "r", encoding="utf-8") as f:
+                        for line in f:
+                            line = line.strip()
+                            if line.startswith("#"):
+                                continue
+                            if any(line.startswith(k + "=") for k in ["SD_REMOTE_URL", "COLAB_SD_API_URL", "KAGGLE_SD_URL", "SD_REMOTE_URLS"]):
+                                val = line.split("=", 1)[1].strip()
+                                parts = re.split(r"[,;\s]+", val)
+                                raw_candidates.extend(parts)
+                except Exception:
+                    pass
 
         # Deduplicate while preserving order
         seen = set()
