@@ -192,8 +192,10 @@ class GenerativeIdentitySynthProvider(BaseImageProvider):
 class ImageEngine:
     def __init__(self):
         from app.Aura.vision.sd_remote_provider import remote_sd_provider
-        self.providers: List[BaseImageProvider] = [
+        from app.Aura.vision.replicate_provider import replicate_provider
+        self.providers: List[Any] = [
             remote_sd_provider,
+            replicate_provider,
             GoogleNanoBananaProvider(),
             GenerativeIdentitySynthProvider()
         ]

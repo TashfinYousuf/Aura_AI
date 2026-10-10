@@ -198,8 +198,10 @@ class RemoteStableDiffusionProvider:
             "negative_prompt": negative_prompt,
             "face_image": master_face_b64,
             "steps": 25,
-            "width": w,
-            "height": h,
+            "width": 512,
+            "height": 768 if "1024" in aspect_ratio else 512,
+            "target_width": w,
+            "target_height": h,
             "cfg_scale": 7.0,
             "sampler_name": "DPM++ 2M Karras",
             "batch_size": 1

@@ -36,6 +36,47 @@ export const CompanionPanel: React.FC<CompanionPanelProps> = ({
   onClearChat,
   onSignOut
 }) => {
+  const [presence, setPresence] = React.useState<{ status_label: string; indicator_color: string }>({
+    status_label: "Active now",
+    indicator_color: "emerald"
+  });
+
+  React.useEffect(() => {
+    const fetchPresence = async () => {
+      try {
+        const res = await fetch("/api/presence/status");
+        if (res.ok) {
+          const data = await res.json();
+          if (data && data.status_label) {
+            setPresence({
+              status_label: data.status_label,
+              indicator_color: data.indicator_color || "emerald"
+            });
+          }
+        }
+      } catch {
+        // Fallback to active
+      }
+    };
+    fetchPresence();
+    const interval = setInterval(fetchPresence, 60000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const dotBg =
+    presence.indicator_color === "amber"
+      ? "bg-amber-500"
+      : presence.indicator_color === "slate"
+      ? "bg-gray-500"
+      : "bg-emerald-500";
+
+  const textColor =
+    presence.indicator_color === "amber"
+      ? "text-amber-400"
+      : presence.indicator_color === "slate"
+      ? "text-gray-400"
+      : "text-emerald-400";
+
   return (
     <header className="flex flex-col sm:flex-row justify-between items-start sm:items-center p-3 sm:p-4 border-b border-gray-800 bg-gray-900/60 backdrop-blur-md sticky top-0 z-20 gap-3 sm:gap-0 shadow-sm">
       {/* Brand Identity, Avatar, Presence & Mode Switcher */}
@@ -51,7 +92,8 @@ export const CompanionPanel: React.FC<CompanionPanelProps> = ({
                 target.src = "https://kkabhwfduxijpftwdzou.supabase.co/storage/v1/object/sign/Aura%20Files/Aura_Ref_Pic.png?token=eyJraWQiOiJhY2YxYzkzYS0xNTk1LTQ5NzgtYjQxMy04OTU0YjVlYmYwOTAiLCJhbGciOiJIUzI1NiJ9.eyJ1cmwiOiJBdXJhIEZpbGVzL0F1cmFfUmVmX1BpYy5wbmciLCJzY29wZSI6ImRvd25sb2FkIiwiaWF0IjoxNzkxNTg2NjczLCJleHAiOjE3OTQxNzg2NzN9.qSonUN7MSsrbC4EwsDKO6KwIso6j5250aUG980xelYY";
               }}
             />
-            <span className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-emerald-500 border-2 border-gray-900 rounded-full"></span>
+            {/* Steady status indicator under DP (no blinking) */}
+            <span className={`absolute bottom-0 right-0 w-2.5 h-2.5 ${dotBg} border-2 border-gray-900 rounded-full shadow-sm`}></span>
           </div>
 
           <div className="flex flex-col">
@@ -101,9 +143,9 @@ export const CompanionPanel: React.FC<CompanionPanelProps> = ({
               </div>
             </div>
 
-            <div className="flex items-center gap-1.5 mt-0.5">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-              <span className="text-[10px] text-emerald-400 font-medium">Active now</span>
+            {/* Clean presence status label without aggressive blinking light */}
+            <div className="flex items-center mt-0.5">
+              <span className={`text-[10px] ${textColor} font-medium`}>{presence.status_label}</span>
             </div>
           </div>
         </div>

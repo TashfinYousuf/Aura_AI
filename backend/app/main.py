@@ -100,6 +100,11 @@ async def health_check():
         "timestamp": datetime.now(timezone.utc).isoformat()
     }
 
+@app.get("/api/presence/status")
+def get_presence_status():
+    from app.Aura.brain.presence_engine import presence_engine
+    return presence_engine.get_current_presence()
+
 # Persistence Endpoints
 class SaveMessage(BaseModel):
     user_id: str

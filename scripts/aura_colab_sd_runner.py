@@ -122,8 +122,10 @@ def launch_server():
         negative_prompt: str = ""
         face_image: str = ""  # Base64 string of Aura's master reference face
         steps: int = 25
-        width: int = 768
-        height: int = 1024
+        width: int = 512
+        height: int = 768
+        target_width: int = 768
+        target_height: int = 1024
         cfg_scale: float = 7.0
 
     @app.get("/sdapi/v1/options")
@@ -137,13 +139,28 @@ def launch_server():
 
     @app.post("/sdapi/v1/txt2img")
     def generate_image(req: Txt2ImgRequest):
+        # Strict anti-horror, anti-duplication negative prompt injection for SD 1.5
+        anti_horror_neg = (
+            "(extra heads:1.5), (duplicate:1.4), (duplicate limbs:1.4), (multiple people:1.4), "
+            "(extra arms:1.4), (extra legs:1.4), (fused fingers:1.4), (too many fingers:1.4), "
+            "(mutated hands:1.4), (poorly drawn hands:1.4), (morbid:1.3), (mutilated:1.3), "
+            "(cloned face:1.4), (disfigured:1.4), (malformed limbs:1.4), (missing arms:1.3), "
+            "(missing legs:1.3), (mutated:1.3), (bad anatomy:1.4)"
+        )
+        full_neg = f"{req.negative_prompt}, {anti_horror_neg}" if req.negative_prompt else anti_horror_neg
+
+        # SD 1.5 UNet is trained at 512x512. Portrait coherence is optimal at 512x768.
+        # Direct generation at 768x1024 causes latent repetition (multiple heads/limbs).
+        gen_w = min(req.width, 512) if req.width else 512
+        gen_h = min(req.height, 768) if req.height else 768
+
         image = pipe(
             prompt=req.prompt,
-            negative_prompt=req.negative_prompt,
+            negative_prompt=full_neg,
             num_inference_steps=req.steps,
             guidance_scale=req.cfg_scale,
-            width=req.width,
-            height=req.height
+            width=gen_w,
+            height=gen_h
         ).images[0]
 
         # Apply facial identity conditioning if master face and swapper are available
@@ -151,7 +168,7 @@ def launch_server():
             try:
                 import numpy as np
                 import cv2
-                from PIL import Image
+                from PIL import Image, ImageFilter
 
                 # Convert generated PIL image to BGR numpy array
                 target_np = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR)
@@ -167,13 +184,22 @@ def launch_server():
                     src_face = src_faces[0]
                     tgt_faces = face_analyzer.get(target_np)
                     if tgt_faces:
-                        # Sort by face bounding box area to get the primary face
+                        # Sort by face bounding box area to get the primary face (ignore tiny background false positives)
                         tgt_faces = sorted(tgt_faces, key=lambda f: (f.bbox[2]-f.bbox[0]) * (f.bbox[3]-f.bbox[1]), reverse=True)
                         target_np = face_swapper.get(target_np, tgt_faces[0], src_face, paste_back=True)
                         image = Image.fromarray(cv2.cvtColor(target_np, cv2.COLOR_BGR2RGB))
+                        # Subtle clarity enhancement for face blend
+                        image = image.filter(ImageFilter.UnsharpMask(radius=1.0, percent=105, threshold=3))
                         print("✨ [FACIAL IDENTITY LOCK]: Aura's master face seamlessly applied to generated deliverable!")
             except Exception as fe:
                 print(f"⚠️ [FACE SWAP NOTICE]: {fe}")
+
+        # High-Fidelity Lanczos Upscale to target resolution (e.g. 768x1024)
+        target_w = req.target_width or 768
+        target_h = req.target_height or 1024
+        if image.size != (target_w, target_h):
+            from PIL import Image
+            image = image.resize((target_w, target_h), Image.Resampling.LANCZOS)
 
         buffered = BytesIO()
         image.save(buffered, format="JPEG", quality=95)
