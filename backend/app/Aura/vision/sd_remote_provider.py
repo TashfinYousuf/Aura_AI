@@ -184,24 +184,23 @@ class RemoteStableDiffusionProvider:
             outfit = "wearing a casual cute white tank top with lace trim and comfy shorts"
             actual_scene = scene
 
-        # Crisp, high-impact positive prompt strictly within SD 1.5 CLIP 77 token boundary
+        # High-impact facial anchor prompt strictly within SD 1.5 CLIP 77 token boundary
         positive_prompt = (
-            f"candid selfie of aura_woman, 22yo, fair skin, hazel eyes, dark brown hair, "
-            f"{outfit}, {actual_scene}, natural skin pores, soft lighting, masterpiece photo"
+            f"candid 35mm portrait selfie of aura_woman, 22yo, alluring hazel-amber eyes, full plump pink lips, "
+            f"slender straight nose, delicate silver clover pendant necklace, voluminous dark layered brunette hair, "
+            f"warm porcelain skin with visible authentic pores, {outfit}, {actual_scene}, authentic photography, soft bedroom light"
         )
 
         if explicit_nude:
             negative_prompt = (
-                "(extra heads:1.5), (duplicate:1.4), (duplicate limbs:1.4), (multiple people:1.4), "
-                "(mutated hands:1.4), (fused fingers:1.4), cartoon, anime, 3d, painting, "
-                "plastic skin, over-smooth skin, deformed, blurry, bad anatomy, doll, cgi, retouch"
+                "(extra heads, duplicate limbs, mutated hands, multiple people:1.4), "
+                "(plastic skin, doll, anime, 3d, cgi, over-smooth, airbrushed, blurry, bad anatomy:1.4)"
             )
         else:
             negative_prompt = (
-                "(nude, naked, fully unclothed, bare breasts, exposed nipples, exposed genitals:1.4), "
-                "(extra heads:1.5), (duplicate:1.4), (duplicate limbs:1.4), (multiple people:1.4), "
-                "(mutated hands:1.4), (fused fingers:1.4), cartoon, anime, 3d, painting, "
-                "plastic skin, over-smooth skin, deformed, blurry, bad anatomy, doll, cgi, retouch"
+                "(nude, naked, fully unclothed, bare breasts, exposed nipples:1.4), "
+                "(extra heads, duplicate limbs, mutated hands, multiple people:1.4), "
+                "(plastic skin, doll, anime, 3d, cgi, over-smooth, airbrushed, blurry, bad anatomy:1.4)"
             )
 
         return positive_prompt, negative_prompt
