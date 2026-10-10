@@ -145,12 +145,40 @@ class RemoteStableDiffusionProvider:
                 outfit = "completely naked, raw authentic skin texture with visible natural pores, candid intimate bedroom selfie, alluring natural pose"
                 actual_scene = "bedroom" if scene in ["desk", "cafe"] else scene
 
-        # 2. Sheer / Transparent Negligee
+        # 2. South Asian Ethnic & Saree Requests (High Priority User Intent)
+        is_saree = any(w in p_lower for w in ["saree", "shari", "শাড়ি", "শাড়ি", "sharee", "anchol", "আঁচল"])
+        is_lehenga = any(w in p_lower for w in ["lehenga", "লেহেঙ্গা", "choli"])
+        is_ethnic = any(w in p_lower for w in ["salwar", "kameez", "kamiz", "kurti", "কামিজ", "সালোয়ার"])
+
+        if is_saree:
+            color = "crimson red and gold"
+            if any(w in p_lower for w in ["black", "কালো"]):
+                color = "alluring translucent black"
+            elif any(w in p_lower for w in ["blue", "নীল"]):
+                color = "royal sapphire blue and silver"
+            elif any(w in p_lower for w in ["white", "সাদা"]):
+                color = "pure white and gold"
+            elif any(w in p_lower for w in ["green", "সবুজ"]):
+                color = "emerald green and gold"
+            elif any(w in p_lower for w in ["pink", "গোলাপি"]):
+                color = "delicate blush pink and silver"
+            outfit = f"wearing an exquisite {color} silk chiffon saree with ornate borders, matching blouse, elegant sensual drape"
+            actual_scene = "bedroom" if scene in ["bed", "bedroom"] else ("living room" if scene in ["desk", "cafe"] else scene)
+
+        elif is_lehenga:
+            outfit = "wearing a gorgeous embellished designer lehenga choli, intricate embroidery, dupatta draped across shoulders"
+            actual_scene = "living room"
+
+        elif is_ethnic:
+            outfit = "wearing a stylish flattering pastel embroidered kurti and salwar, refined feminine style"
+            actual_scene = "living room"
+
+        # 3. Sheer / Transparent Negligee
         elif is_sheer:
             outfit = "wearing a sheer delicate see-through black mesh lace negligee, translucent fabric softly revealing silhouette"
             actual_scene = "bedroom"
 
-        # 3. Specific Lingerie / Boudoir Requests
+        # 4. Specific Lingerie / Boudoir Requests
         elif "red velvet" in p_lower or ("red" in p_lower and is_lingerie):
             outfit = "wearing a gorgeous crimson red velvet lace lingerie set, satin bralette with delicate embroidery"
             actual_scene = "bedroom"
@@ -167,10 +195,10 @@ class RemoteStableDiffusionProvider:
             outfit = "wrapped comfortably in a soft plush white bath towel, damp dewy hair"
             actual_scene = "shower"
 
-        # 4. Everyday Contexts
-        elif scene in ["bed", "bedroom"] or any(w in p_lower for w in ["bed", "sleep", "ঘুম"]):
-            outfit = "wearing a delicate white floral tank top with lace trim and soft shorts, relaxing on bed"
-            actual_scene = "bedroom"
+        # 5. Casual & Everyday Contexts
+        elif any(w in p_lower for w in ["jeans", "denim", "pants"]):
+            outfit = "wearing tight flattering blue denim jeans and a fitted white crop top"
+            actual_scene = "living room"
         elif scene == "evening" or any(w in p_lower for w in ["dress", "gown", "party"]):
             outfit = "wearing an elegant form-fitting evening cocktail dress"
             actual_scene = "evening"
@@ -180,15 +208,17 @@ class RemoteStableDiffusionProvider:
         elif any(w in p_lower for w in ["hoodie", "oversized"]):
             outfit = "wearing a cozy oversized boyfriend hoodie, bare legs, relaxed cute couch pose"
             actual_scene = "living room"
+        elif scene in ["bed", "bedroom"] or any(w in p_lower for w in ["bed", "sleep", "ঘুম"]):
+            outfit = "wearing a delicate white floral tank top with lace trim and soft shorts, relaxing on bed"
+            actual_scene = "bedroom"
         else:
             outfit = "wearing a casual cute white tank top with lace trim and comfy shorts"
             actual_scene = scene
 
-        # High-impact facial anchor prompt strictly within SD 1.5 CLIP 77 token boundary
+        # High-impact facial anchor prompt strictly under 60 tokens (leaving room for outfit)
         positive_prompt = (
-            f"candid 35mm portrait selfie of aura_woman, 22yo, alluring hazel-amber eyes, full plump pink lips, "
-            f"slender straight nose, delicate silver clover pendant necklace, voluminous dark layered brunette hair, "
-            f"warm porcelain skin with visible authentic pores, {outfit}, {actual_scene}, authentic photography, soft bedroom light"
+            f"candid 35mm photo of aura_woman, 22yo, captivating hazel-amber eyes, full plump pink lips, "
+            f"slender nose, dark layered hair, {outfit}, {actual_scene}, natural skin pores, soft lighting"
         )
 
         if explicit_nude:
