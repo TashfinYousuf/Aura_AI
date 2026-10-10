@@ -8,17 +8,30 @@ Aura LoRA Fine-Tuner:
 """
 
 import os
+import sys
 import glob
 import math
 import torch
 import torch.nn.functional as F
+
+# 1. Neutralize broken torchao version check in PEFT / Colab / Kaggle
+try:
+    import peft.import_utils
+    peft.import_utils.is_torchao_available = lambda: False
+except Exception:
+    pass
+try:
+    import peft.tuners.lora.torchao
+    peft.tuners.lora.torchao.is_torchao_available = lambda: False
+except Exception:
+    pass
+
 from pathlib import Path
 from PIL import Image
 from torchvision import transforms
 from torch.utils.data import Dataset, DataLoader
 from transformers import CLIPTextModel, CLIPTokenizer
 from diffusers import AutoencoderKL, DDPMScheduler, UNet2DConditionModel
-from peft import LoraConfig, get_peft_model
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DATA_DIR = PROJECT_ROOT / "data" / "aura_lora_dataset"
@@ -85,8 +98,8 @@ def train_lora(
         prepare_dataset()
 
     tokenizer = CLIPTokenizer.from_pretrained(MODEL_ID, subfolder="tokenizer")
-    text_encoder = CLIPTextModel.from_pretrained(MODEL_ID, subfolder="text_encoder")
-    vae = AutoencoderKL.from_pretrained(MODEL_ID, subfolder="vae")
+    text_encoder = CLIPTextModel.from_pretrained(MODEL_ID, subfolder="text_encoder", torch_dtype=torch.float32)
+    vae = AutoencoderKL.from_pretrained(MODEL_ID, subfolder="vae", torch_dtype=torch.float32)
     unet = UNet2DConditionModel.from_pretrained(MODEL_ID, subfolder="unet")
     noise_scheduler = DDPMScheduler.from_pretrained(MODEL_ID, subfolder="scheduler")
 
@@ -94,24 +107,66 @@ def train_lora(
     text_encoder.requires_grad_(False)
     unet.requires_grad_(False)
 
-    vae.to(device, dtype=torch.float16 if device == "cuda" else torch.float32)
-    text_encoder.to(device, dtype=torch.float16 if device == "cuda" else torch.float32)
+    vae.to(device)
+    text_encoder.to(device)
     unet.to(device)
 
-    # Attach LoRA to UNet
-    lora_config = LoraConfig(
-        r=rank,
-        lora_alpha=rank,
-        init_lora_weights="gaussian",
-        target_modules=["to_k", "to_q", "to_v", "to_out.0"]
-    )
-    unet = get_peft_model(unet, lora_config)
-    unet.print_trainable_parameters()
+    # Attach LoRA to UNet (with torchao neutralization and native fallback)
+    use_peft = False
+    try:
+        from peft import LoraConfig, get_peft_model
+        # Ensure torchao check is disabled
+        try:
+            import peft.import_utils
+            peft.import_utils.is_torchao_available = lambda: False
+        except Exception:
+            pass
+        try:
+            import peft.tuners.lora.torchao
+            peft.tuners.lora.torchao.is_torchao_available = lambda: False
+        except Exception:
+            pass
+
+        lora_config = LoraConfig(
+            r=rank,
+            lora_alpha=rank,
+            init_lora_weights="gaussian",
+            target_modules=["to_k", "to_q", "to_v", "to_out.0"]
+        )
+        unet = get_peft_model(unet, lora_config)
+        use_peft = True
+        print("✅ [PEFT LORA]: Attached LoRA adapters to UNet successfully!")
+        unet.print_trainable_parameters()
+    except Exception as peft_err:
+        print(f"⚠️ [PEFT NOTICE]: {peft_err}. Activating Diffusers native LoRA processor...")
+        from diffusers.models.attention_processor import LoRAAttnProcessor
+        lora_attn_procs = {}
+        for name in unet.attn_processors.keys():
+            cross_attention_dim = None if name.endswith("attn1.processor") else unet.config.cross_attention_dim
+            if name.startswith("mid_block"):
+                hidden_size = unet.config.block_out_channels[-1]
+            elif name.startswith("up_blocks"):
+                block_id = int(name[len("up_blocks.")])
+                hidden_size = list(reversed(unet.config.block_out_channels))[block_id]
+            elif name.startswith("down_blocks"):
+                block_id = int(name[len("down_blocks.")])
+                hidden_size = unet.config.block_out_channels[block_id]
+
+            lora_attn_procs[name] = LoRAAttnProcessor(
+                hidden_size=hidden_size,
+                cross_attention_dim=cross_attention_dim,
+                rank=rank
+            )
+        unet.set_attn_processor(lora_attn_procs)
+        print("✅ [DIFFUSERS LORA]: Attached native LoRA attention processors to UNet!")
 
     dataset = AuraDataset(DATA_DIR, tokenizer, size=512)
     dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
 
-    optimizer = torch.optim.AdamW(unet.parameters(), lr=lr, weight_decay=1e-2)
+    trainable_params = [p for p in unet.parameters() if p.requires_grad]
+    if not trainable_params:
+        trainable_params = [p for n, p in unet.named_parameters() if "lora" in n.lower()]
+    optimizer = torch.optim.AdamW(trainable_params or unet.parameters(), lr=lr, weight_decay=1e-2)
 
     global_step = 0
     epoch = 0
@@ -172,13 +227,17 @@ def train_lora(
         from safetensors.torch import save_file
         # Extract LoRA state dict
         peft_state_dict = unet.state_dict()
-        lora_state_dict = {k: v for k, v in peft_state_dict.items() if "lora" in k}
+        lora_state_dict = {k: v for k, v in peft_state_dict.items() if "lora" in k.lower()}
+        if not lora_state_dict:
+            lora_state_dict = peft_state_dict
         save_file(lora_state_dict, str(OUTPUT_LORA_PATH))
+        save_file(lora_state_dict, "aura_v1.safetensors")
         print("✨ [LORA TRAINING COMPLETE]: aura_v1.safetensors successfully created and locked!")
     except Exception as e:
         # Fallback to standard torch save
         fallback_path = OUTPUT_DIR / "aura_v1.pt"
         torch.save(unet.state_dict(), str(fallback_path))
+        torch.save(unet.state_dict(), "aura_v1.pt")
         print(f"✨ [LORA SAVE FALLBACK]: Saved to {fallback_path} ({e})")
 
 if __name__ == "__main__":
