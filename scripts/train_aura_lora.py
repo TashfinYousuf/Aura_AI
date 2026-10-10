@@ -255,6 +255,15 @@ def train_lora(
                 except Exception:
                     pass
 
+        if Path("/content/drive/MyDrive").exists():
+            try:
+                drive_target = Path("/content/drive/MyDrive/Aura_AI/aura_v1.safetensors")
+                drive_target.parent.mkdir(parents=True, exist_ok=True)
+                save_file(lora_state_dict, str(drive_target))
+                print(f"💾 [GOOGLE DRIVE PERMANENT BACKUP]: Preserved in Google Drive at {drive_target}!")
+            except Exception:
+                pass
+
         print("✨ [LORA TRAINING COMPLETE]: aura_v1.safetensors successfully created and locked!")
     except Exception as e:
         fallback_path = OUTPUT_DIR / "aura_v1.pt"

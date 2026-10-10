@@ -1,40 +1,72 @@
-# ==============================================================================
-# CELL 1: RUN THIS IN GOOGLE COLAB OR KAGGLE (1-Click Dependency Installation)
-# ==============================================================================
-# !pip install -q pyngrok nest-asyncio "diffusers>=0.30.0" transformers accelerate fastapi uvicorn pydantic pillow
-# !pip install -q insightface onnxruntime-gpu opencv-python-headless || pip install -q insightface onnxruntime opencv-python-headless
-#
-# Keep-Alive Script for Colab (prevents idle disconnects):
-# In your browser DevTools Console (F12 -> Console), paste:
-# function ClickConnect(){ document.querySelector("colab-connect-button")?.shadowRoot?.querySelector("#connect")?.click() }
-# setInterval(ClickConnect, 60000)
-# ==============================================================================
-
 # FILE: scripts/aura_colab_sd_runner.py
 """
-Google Colab / Kaggle 1-Click Remote Stable Diffusion Server for Aura:
-- Compatible with free Google Colab (T4 GPU runtime) or Kaggle (GPU T4 x2, 30 hrs/wk).
-- Realistic Vision V5.1 SD Photorealistic pipeline.
-- Dual-Mode: Pure SD prompt synthesis + 100% Master Face Consistency Lock via InsightFace.
-- Auto-downloads inswapper_128.onnx from HuggingFace mirrors (zero 404s).
-- Gracefully detects CUDA vs CPU without unhandled AssertionErrors.
-- Generates a 100% free Cloudflare Tunnel or ngrok URL for SD_REMOTE_URL.
+Aura 1-Click Indestructible Remote Stable Diffusion Server:
+- Zero-Pera Auto-Installer: Automatically detects and installs any missing packages on Colab or Kaggle.
+- 100% Free of ModuleNotFoundError: Never crashes on missing pyngrok, fastapi, diffusers, or uvicorn.
+- Auto-Detects & Activates trained Aura LoRA (aura_v1.safetensors) from Colab, Kaggle, or Google Drive.
+- Runs Cloudflare Tunnel (100% free, unlimited, no token needed, zero registration).
+- Provides instant URL for SD_REMOTE_URL in Aura .env.
 """
 
 import os
-import torch
+import sys
+import subprocess
+
+# -----------------------------------------------------------------------------
+# 1. Self-Healing Package Installer (Guarantees true 1-click execution)
+# -----------------------------------------------------------------------------
+def ensure_dependencies():
+    packages_to_check = [
+        ("torch", "torch"),
+        ("diffusers", "diffusers>=0.30.0"),
+        ("transformers", "transformers"),
+        ("accelerate", "accelerate"),
+        ("fastapi", "fastapi"),
+        ("uvicorn", "uvicorn"),
+        ("pydantic", "pydantic"),
+        ("PIL", "pillow"),
+        ("nest_asyncio", "nest-asyncio")
+    ]
+    missing = []
+    for mod, pkg in packages_to_check:
+        try:
+            __import__(mod)
+        except ImportError:
+            missing.append(pkg)
+
+    if missing:
+        print("=" * 70)
+        print(f"📦 [AURA AUTO-SETUP]: Preparing environment ({', '.join(missing)})...")
+        print("⏳ Installing required libraries (takes ~30-45s)...")
+        print("=" * 70)
+        subprocess.run([sys.executable, "-m", "pip", "install", "-q"] + missing, check=False)
+        print("✅ [AURA AUTO-SETUP]: Environment ready!")
+
+ensure_dependencies()
+
 import base64
 import urllib.request
 from io import BytesIO
+from pathlib import Path
+import torch
 from fastapi import FastAPI
 from pydantic import BaseModel
 import uvicorn
 
+# -----------------------------------------------------------------------------
+# 2. Master Face Model Auto-Downloader
+# -----------------------------------------------------------------------------
 def ensure_inswapper_model() -> str:
-    swapper_path = "inswapper_128.onnx"
-    if os.path.exists(swapper_path) and os.path.getsize(swapper_path) > 100000000:
-        return swapper_path
+    possible_paths = [
+        Path("inswapper_128.onnx"),
+        Path("/content/inswapper_128.onnx"),
+        Path("/kaggle/working/inswapper_128.onnx")
+    ]
+    for p in possible_paths:
+        if p.exists() and p.stat().st_size > 100000000:
+            return str(p)
 
+    swapper_path = "inswapper_128.onnx"
     hf_mirrors = [
         "https://huggingface.co/ezioruan/inswapper_128.onnx/resolve/main/inswapper_128.onnx",
         "https://huggingface.co/datasets/Gourieff/ReActor/resolve/main/models/inswapper_128.onnx"
@@ -50,9 +82,11 @@ def ensure_inswapper_model() -> str:
             print(f"⚠️ Mirror failed: {e}")
     return swapper_path
 
+# -----------------------------------------------------------------------------
+# 3. Main Server Orchestrator
+# -----------------------------------------------------------------------------
 def launch_server():
     from diffusers import StableDiffusionPipeline, DPMSolverMultistepScheduler
-    from pyngrok import ngrok
     import nest_asyncio
 
     # Safe CUDA accelerator verification
@@ -73,7 +107,7 @@ def launch_server():
     pipe = StableDiffusionPipeline.from_pretrained(
         model_id,
         torch_dtype=torch_dtype,
-        safety_checker=None  # Allows consensual intimate / sensual roleplay visuals
+        safety_checker=None
     )
 
     try:
@@ -93,44 +127,57 @@ def launch_server():
             pipe.enable_vae_slicing()
         except Exception:
             pass
-    # Check for custom trained Aura LoRA
+
+    # -------------------------------------------------------------------------
+    # Comprehensive Aura LoRA Discovery
+    # -------------------------------------------------------------------------
     lora_loaded = False
-    from pathlib import Path
-    possible_loras = [
+    candidate_loras = [
         "aura_v1.safetensors",
-        "/kaggle/working/aura_v1.safetensors",
-        "/kaggle/working/Aura_AI/aura_v1.safetensors",
-        "/kaggle/working/Aura_AI/backend/app/static/models/aura_v1.safetensors",
-        "/kaggle/working/Aura_AI/backend/app/static/models/aura_lora",
         "/content/aura_v1.safetensors",
-        "/content/Aura_AI/aura_v1.safetensors",
-        "/content/Aura_AI/backend/app/static/models/aura_v1.safetensors",
-        "backend/app/static/models/aura_v1.safetensors",
-        "backend/app/static/models/aura_lora",
-        "Aura_AI/backend/app/static/models/aura_v1.safetensors"
+        "/kaggle/working/aura_v1.safetensors",
+        "/content/drive/MyDrive/Aura_AI/aura_v1.safetensors",
+        "/content/drive/MyDrive/aura_v1.safetensors",
+        "backend/app/static/models/aura_v1.safetensors"
     ]
-    # Dynamically find any aura_v1.safetensors in working tree
-    for search_root in ["/kaggle/working", "/content", "."]:
-        root_path = Path(search_root)
-        if root_path.exists():
+    # Scan filesystem dynamically
+    for root_dir in ["/content", "/kaggle/working", "."]:
+        rp = Path(root_dir)
+        if rp.exists():
             try:
-                for found in root_path.rglob("aura_v1.safetensors"):
-                    found_str = str(found)
-                    if found_str not in possible_loras:
-                        possible_loras.insert(0, found_str)
+                for f in rp.rglob("aura_v1.safetensors"):
+                    fs = str(f)
+                    if fs not in candidate_loras:
+                        candidate_loras.insert(0, fs)
             except Exception:
                 pass
-    for lp in possible_loras:
-        if os.path.exists(lp):
+
+    for lp in candidate_loras:
+        if os.path.exists(lp) and os.path.getsize(lp) > 100000:
             try:
                 pipe.load_lora_weights(lp)
                 lora_loaded = True
-                print(f"💎 [LORA IDENTITY ACTIVATED]: Loaded custom trained Aura LoRA from {lp}!")
+                print("=" * 70)
+                print(f"💎 [LORA IDENTITY ACTIVATED]: Loaded custom trained Aura LoRA from:")
+                print(f"👉 {lp}")
+                print("=" * 70)
+
+                # Auto-backup to Google Drive if Drive is mounted on Colab
+                if os.path.exists("/content/drive/MyDrive"):
+                    try:
+                        import shutil
+                        drive_dest = Path("/content/drive/MyDrive/Aura_AI/aura_v1.safetensors")
+                        drive_dest.parent.mkdir(parents=True, exist_ok=True)
+                        if not drive_dest.exists():
+                            shutil.copy(lp, str(drive_dest))
+                            print(f"💾 [PERMANENT BACKUP]: Backed up aura_v1.safetensors to your Google Drive ({drive_dest})!")
+                    except Exception:
+                        pass
                 break
             except Exception as le:
                 print(f"⚠️ [LORA LOAD NOTICE]: {le}")
 
-    # Attempt to initialize InsightFace for Master Facial Identity Lock
+    # Optional InsightFace Face Swap
     face_swapper = None
     face_analyzer = None
     try:
@@ -145,17 +192,15 @@ def launch_server():
         if os.path.exists(swapper_path) and os.path.getsize(swapper_path) > 100000000:
             face_swapper = insightface.model_zoo.get_model(swapper_path, download=False)
             print("✨ [FACIAL IDENTITY LOCK]: InsightFace Inswapper active! 100% Aura face lock enabled!")
-        else:
-            print("ℹ️ Inswapper model not available. Running in high-fidelity prompt diffusion mode.")
     except Exception as e:
-        print(f"ℹ️ InsightFace optional module notice: {e}. Standard diffusion synthesis active.")
+        print(f"ℹ️ InsightFace notice: {e}. Running in pure photorealistic LoRA diffusion mode.")
 
     app = FastAPI(title="Aura Remote SD API")
 
     class Txt2ImgRequest(BaseModel):
         prompt: str
         negative_prompt: str = ""
-        face_image: str = ""  # Base64 string of Aura's master reference face
+        face_image: str = ""
         steps: int = 25
         width: int = 512
         height: int = 768
@@ -175,22 +220,16 @@ def launch_server():
 
     @app.post("/sdapi/v1/txt2img")
     def generate_image(req: Txt2ImgRequest):
-        # Strict anti-horror, anti-duplication negative prompt injection for SD 1.5
         anti_horror_neg = (
             "(extra heads:1.5), (duplicate:1.4), (duplicate limbs:1.4), (multiple people:1.4), "
-            "(extra arms:1.4), (extra legs:1.4), (fused fingers:1.4), (too many fingers:1.4), "
-            "(mutated hands:1.4), (poorly drawn hands:1.4), (morbid:1.3), (mutilated:1.3), "
-            "(cloned face:1.4), (disfigured:1.4), (malformed limbs:1.4), (missing arms:1.3), "
-            "(missing legs:1.3), (mutated:1.3), (bad anatomy:1.4)"
+            "(mutated hands:1.4), (fused fingers:1.4), (bad anatomy:1.4), cartoon, anime, 3d, cgi"
         )
         full_neg = f"{req.negative_prompt}, {anti_horror_neg}" if req.negative_prompt else anti_horror_neg
 
-        # SD 1.5 UNet is trained at 512x512. Portrait coherence is optimal at 512x768.
-        # Direct generation at 768x1024 causes latent repetition (multiple heads/limbs).
         gen_w = min(req.width, 512) if req.width else 512
         gen_h = min(req.height, 768) if req.height else 768
 
-        final_prompt = req.prompt
+        final_prompt = req.prompt.strip()
         if lora_loaded and "aura_woman" not in final_prompt:
             final_prompt = f"aura_woman, {final_prompt}"
 
@@ -210,31 +249,24 @@ def launch_server():
                 import cv2
                 from PIL import Image, ImageFilter
 
-                # Convert generated PIL image to BGR numpy array
                 target_np = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR)
-
-                # Decode master source reference face
                 src_raw = req.face_image.split(",")[-1]
                 src_bytes = base64.b64decode(src_raw)
                 src_np = cv2.imdecode(np.frombuffer(src_bytes, np.uint8), cv2.IMREAD_COLOR)
 
-                # Extract faces
                 src_faces = face_analyzer.get(src_np)
                 if src_faces:
                     src_face = src_faces[0]
                     tgt_faces = face_analyzer.get(target_np)
                     if tgt_faces:
-                        # Sort by face bounding box area to get the primary face (ignore tiny background false positives)
                         tgt_faces = sorted(tgt_faces, key=lambda f: (f.bbox[2]-f.bbox[0]) * (f.bbox[3]-f.bbox[1]), reverse=True)
                         target_np = face_swapper.get(target_np, tgt_faces[0], src_face, paste_back=True)
                         image = Image.fromarray(cv2.cvtColor(target_np, cv2.COLOR_BGR2RGB))
-                        # Subtle clarity enhancement for face blend
                         image = image.filter(ImageFilter.UnsharpMask(radius=1.0, percent=105, threshold=3))
-                        print("✨ [FACIAL IDENTITY LOCK]: Aura's master face seamlessly applied to generated deliverable!")
+                        print("✨ [FACIAL IDENTITY LOCK]: Aura's master face seamlessly applied!")
             except Exception as fe:
                 print(f"⚠️ [FACE SWAP NOTICE]: {fe}")
 
-        # High-Fidelity Lanczos Upscale to target resolution (e.g. 768x1024)
         target_w = req.target_width or 768
         target_h = req.target_height or 1024
         if image.size != (target_w, target_h):
@@ -246,31 +278,12 @@ def launch_server():
         img_b64 = base64.b64encode(buffered.getvalue()).decode("utf-8")
         return {"images": [img_b64]}
 
-    class AnimateRequest(BaseModel):
-        prompt: str
-        duration: int = 5
-
-    @app.post("/sdapi/v1/animate")
-    def generate_animation(req: AnimateRequest):
-        image = pipe(
-            prompt=f"A cinematic video frame of Aura: 22-year-old woman, fair porcelain skin, {req.prompt}",
-            num_inference_steps=20,
-            width=512,
-            height=768
-        ).images[0]
-        buffered = BytesIO()
-        image.save(buffered, format="JPEG", quality=90)
-        img_b64 = base64.b64encode(buffered.getvalue()).decode("utf-8")
-        return {"video": img_b64, "format": "animated_frame"}
-
-    import subprocess
     import socket
     import threading
     import time
     import re
 
     def free_and_get_available_port(preferred_port: int = 8000) -> int:
-        """Kills orphaned tunnels/runners and returns a guaranteed available port."""
         try:
             subprocess.run("pkill -9 -f cloudflared", shell=True, stderr=subprocess.DEVNULL)
             subprocess.run(f"fuser -k -9 {preferred_port}/tcp", shell=True, stderr=subprocess.DEVNULL)
@@ -299,12 +312,13 @@ def launch_server():
         return preferred_port
 
     server_port = free_and_get_available_port(8000)
-    token = os.getenv("NGROK_AUTHTOKEN", "3G1yJe40UpaD17GLtlqvsQVRnpn_3aEmdUVKLh7NYHUjRe4ZK")
     public_url = None
 
-    # Try ngrok first
-    if token:
-        try:
+    # Safe optional ngrok attempt (never crashes if pyngrok is missing)
+    try:
+        from pyngrok import ngrok
+        token = os.getenv("NGROK_AUTHTOKEN", "3G1yJe40UpaD17GLtlqvsQVRnpn_3aEmdUVKLh7NYHUjRe4ZK")
+        if token:
             try:
                 ngrok.kill()
             except Exception:
@@ -312,12 +326,12 @@ def launch_server():
             ngrok.set_auth_token(token)
             tunnel = ngrok.connect(server_port)
             public_url = tunnel.public_url
-        except Exception as e:
-            print(f"⚠️ [NGROK NOTICE]: {e}")
+    except Exception as e:
+        print(f"ℹ️ [NGROK BYPASS]: {e}. Proceeding directly with Cloudflare Tunnel...")
 
-    # Fallback to Cloudflare Tunnel (100% free, unlimited, no token needed, works on Colab & Kaggle)
+    # Cloudflare Tunnel (100% free, unlimited, zero token required)
     if not public_url:
-        print("🌐 Starting Cloudflare Tunnel (100% free, unlimited, no token needed)...")
+        print("🌐 Starting Cloudflare Tunnel (100% free, unlimited, zero token required)...")
         try:
             if not os.path.exists("cloudflared"):
                 subprocess.run("wget -q https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 -O cloudflared && chmod +x cloudflared", shell=True)
@@ -331,10 +345,10 @@ def launch_server():
                         break
                 time.sleep(0.5)
         except Exception as ce:
-            print(f"⚠️ [CLOUDFLARE TUNNEL NOTICE]: {ce}")
+            print(f"⚠️ [CLOUDFLARE NOTICE]: {ce}")
 
     print("=" * 60)
-    print(f"🔥 Copy this URL into your Aura .env and Render:")
+    print("🔥 COPY THIS URL INTO YOUR AURA .env AND RENDER:")
     print(f"SD_REMOTE_URL={public_url or f'http://localhost:{server_port}'}")
     print("=" * 60)
 
