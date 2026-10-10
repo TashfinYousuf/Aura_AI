@@ -69,9 +69,17 @@ class TestAdultPipeline(unittest.TestCase):
         self.assertIn("asterisks for physical actions", prompt_en)
 
     def test_remote_sd_provider_graceful_offline(self):
-        """Invariant: When remote Colab SD is not configured, it handles cleanly without throwing errors."""
-        is_up = asyncio.run(remote_sd_provider.is_available())
-        self.assertFalse(is_up)  # Should return False gracefully when offline
+        """Invariant: When remote Colab SD is offline or unreachable, it handles cleanly without throwing errors."""
+        with patch.object(remote_sd_provider, "get_all_candidate_urls", return_value=["http://127.0.0.1:59999"]):
+            is_up = asyncio.run(remote_sd_provider.is_available())
+            self.assertFalse(is_up)  # Should return False gracefully when offline
+
+    def test_remote_sd_provider_multi_node_candidates(self):
+        """Invariant: Candidate parser extracts multiple URLs from comma-separated string."""
+        with patch.object(remote_sd_provider, "get_all_candidate_urls", return_value=["https://node1.dev", "https://node2.dev"]):
+            candidates = remote_sd_provider.get_all_candidate_urls()
+            self.assertEqual(len(candidates), 2)
+            self.assertEqual(candidates[0], "https://node1.dev")
 
     @patch("app.Aura.brain.model_router.model_router.complete")
     def test_cognitive_pipeline_auto_activates_adult_mode(self, mock_complete):

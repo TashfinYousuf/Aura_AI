@@ -75,6 +75,7 @@ class GoogleVeoProvider(BaseVideoProvider):
 class RemoteSDVideoProvider(BaseVideoProvider):
     """
     Connects to remote GPU runner (/sdapi/v1/animate or /sdapi/v1/txt2video) when available.
+    Supports multi-node auto-failover (Colab + Kaggle pool).
     """
     async def generate_video(
         self,
@@ -83,27 +84,37 @@ class RemoteSDVideoProvider(BaseVideoProvider):
         camera_plan: str = "slow cinematic push-in",
         duration_seconds: int = 5
     ) -> Optional[str]:
-        from app.core.config import settings
-        url = (settings.SD_REMOTE_URL or os.getenv("SD_REMOTE_URL", "")).rstrip("/")
-        if not url:
+        from app.Aura.vision.sd_remote_provider import remote_sd_provider
+        active_nodes = await remote_sd_provider.get_sorted_active_nodes()
+        if not active_nodes:
             return None
-        try:
-            import httpx
-            import base64
-            headers = {"ngrok-skip-browser-warning": "any", "User-Agent": "AuraClient/1.0"}
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                res = await client.post(f"{url}/sdapi/v1/animate", json={"prompt": prompt, "duration": duration_seconds}, headers=headers)
-                if res.status_code == 200:
-                    data = res.json()
-                    vid_raw = data.get("video", "")
-                    if vid_raw:
-                        file_name = f"aura_reel_{uuid.uuid4().hex[:8]}.mp4"
-                        save_path = VIDEOS_DIR / file_name
-                        with open(save_path, "wb") as f:
-                            f.write(base64.b64decode(vid_raw))
-                        return f"/static/generated/aura/videos/{file_name}"
-        except Exception as e:
-            print(f"ℹ️ [REMOTE VIDEO NOTICE]: {e}")
+
+        headers = {"ngrok-skip-browser-warning": "any", "User-Agent": "AuraClient/1.0"}
+        for node_url, node_info in active_nodes:
+            try:
+                import httpx
+                import base64
+                async with httpx.AsyncClient(timeout=30.0) as client:
+                    res = await client.post(
+                        f"{node_url}/sdapi/v1/animate",
+                        json={"prompt": prompt, "duration": duration_seconds, "camera_plan": camera_plan},
+                        headers=headers
+                    )
+                    if res.status_code == 200:
+                        data = res.json()
+                        vid_raw = data.get("video", "")
+                        if vid_raw:
+                            if "," in vid_raw:
+                                vid_raw = vid_raw.split(",")[1]
+                            file_name = f"aura_reel_{uuid.uuid4().hex[:8]}.mp4"
+                            save_path = VIDEOS_DIR / file_name
+                            with open(save_path, "wb") as f:
+                                f.write(base64.b64decode(vid_raw))
+                            print(f"🎬 [REMOTE SD VIDEO SUCCESS]: Generated via {node_url}: {file_name}")
+                            return f"/static/generated/aura/videos/{file_name}"
+            except Exception as e:
+                print(f"⚠️ [REMOTE SD VIDEO FAILOVER]: {node_url} failed: {e}. Trying next node...")
+
         return None
 
 class LocalCinematicVideoProvider(BaseVideoProvider):

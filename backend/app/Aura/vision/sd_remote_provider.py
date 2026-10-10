@@ -8,11 +8,13 @@ Remote / Cloud Google Colab Stable Diffusion Provider:
 """
 
 import os
+import re
 import uuid
 import base64
+import asyncio
 import httpx
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Tuple, Dict, Any
 from app.core.config import settings
 
 GENERATED_DIR = Path(__file__).resolve().parent.parent.parent / "static" / "generated" / "aura"
@@ -22,21 +24,96 @@ class RemoteStableDiffusionProvider:
     def __init__(self):
         self.remote_url = settings.SD_REMOTE_URL or settings.COLAB_SD_API_URL or os.getenv("SD_REMOTE_URL", "")
 
+    def get_all_candidate_urls(self) -> List[str]:
+        """
+        Extracts all candidate URLs from settings, environment variables,
+        and directly parses .env to support multi-line or comma-separated definitions.
+        """
+        raw_candidates: List[str] = []
+        for key in ["SD_REMOTE_URL", "COLAB_SD_API_URL", "KAGGLE_SD_URL", "SD_REMOTE_URLS"]:
+            val = getattr(settings, key, "") or os.getenv(key, "")
+            if val:
+                parts = re.split(r"[,;\s]+", str(val).strip())
+                raw_candidates.extend(parts)
+
+        # Inspect root .env directly to capture duplicate keys or multi-node configurations
+        env_path = Path(__file__).resolve().parent.parent.parent.parent / ".env"
+        if env_path.exists():
+            try:
+                with open(env_path, "r", encoding="utf-8") as f:
+                    for line in f:
+                        line = line.strip()
+                        if line.startswith("#"):
+                            continue
+                        if any(line.startswith(k + "=") for k in ["SD_REMOTE_URL", "COLAB_SD_API_URL", "KAGGLE_SD_URL", "SD_REMOTE_URLS"]):
+                            val = line.split("=", 1)[1].strip()
+                            parts = re.split(r"[,;\s]+", val)
+                            raw_candidates.extend(parts)
+            except Exception:
+                pass
+
+        # Deduplicate while preserving order
+        seen = set()
+        clean: List[str] = []
+        for u in raw_candidates:
+            url_str = u.strip().rstrip("/")
+            if (url_str.startswith("http://") or url_str.startswith("https://")) and url_str not in seen:
+                seen.add(url_str)
+                clean.append(url_str)
+        return clean
+
     def get_effective_url(self) -> str:
-        url = self.remote_url or os.getenv("SD_REMOTE_URL", "") or os.getenv("COLAB_SD_API_URL", "")
-        return url.rstrip("/")
+        candidates = self.get_all_candidate_urls()
+        return candidates[0] if candidates else ""
+
+    async def check_node(self, url: str) -> Optional[Dict[str, Any]]:
+        """Health-checks a single remote runner endpoint with a short timeout."""
+        if not url:
+            return None
+        headers = {"ngrok-skip-browser-warning": "any", "User-Agent": "AuraClient/1.0"}
+        try:
+            async with httpx.AsyncClient(timeout=3.0) as client:
+                res = await client.get(f"{url}/sdapi/v1/options", headers=headers)
+                if res.status_code == 200:
+                    try:
+                        return res.json()
+                    except Exception:
+                        return {"status": "online", "device": "unknown"}
+        except Exception:
+            pass
+        return None
+
+    async def get_sorted_active_nodes(self) -> List[Tuple[str, Dict[str, Any]]]:
+        """
+        Discovers all live runner nodes and sorts them to prioritize GPU (e.g. Tesla T4)
+        over CPU nodes for blazing fast rendering.
+        """
+        candidates = self.get_all_candidate_urls()
+        if not candidates:
+            return []
+
+        tasks = [self.check_node(u) for u in candidates]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        active_nodes: List[Tuple[str, Dict[str, Any]]] = []
+        for url, res in zip(candidates, results):
+            if isinstance(res, dict) and res.get("status") == "online":
+                active_nodes.append((url, res))
+
+        # Prioritize GPU (Tesla T4, CUDA) over CPU
+        def sort_priority(item: Tuple[str, Dict[str, Any]]) -> int:
+            _, info = item
+            device = str(info.get("device", "")).lower()
+            if any(k in device for k in ["t4", "cuda", "gpu", "tesla"]):
+                return 0  # High-priority GPU
+            return 1      # CPU / other
+
+        active_nodes.sort(key=sort_priority)
+        return active_nodes
 
     async def is_available(self) -> bool:
-        url = self.get_effective_url()
-        if not url:
-            return False
-        try:
-            headers = {"ngrok-skip-browser-warning": "any", "User-Agent": "AuraClient/1.0"}
-            async with httpx.AsyncClient(timeout=2.5) as client:
-                res = await client.get(f"{url}/sdapi/v1/options", headers=headers)
-                return res.status_code == 200
-        except Exception:
-            return False
+        active = await self.get_sorted_active_nodes()
+        return len(active) > 0
 
     def _synthesize_outfit_and_scene(self, user_prompt: str, scene: str) -> tuple[str, str]:
         p_lower = (user_prompt or "").lower()
@@ -92,13 +169,11 @@ class RemoteStableDiffusionProvider:
         reference_paths: List[Path],
         aspect_ratio: str = "768:1024"
     ) -> Optional[str]:
-        base_url = self.get_effective_url()
-        if not base_url:
-            return None
-
-        # Pre-flight check: ensure remote server is reachable before assembling payload
-        if not await self.is_available():
-            print(f"ℹ️ [COLAB SD STATUS]: Remote URL {base_url} is currently offline. Routing to local identity synth provider...")
+        active_nodes = await self.get_sorted_active_nodes()
+        if not active_nodes:
+            candidates = self.get_all_candidate_urls()
+            if candidates:
+                print(f"ℹ️ [COLAB SD STATUS]: Remote URL(s) {candidates} are currently offline. Routing to local identity synth provider...")
             return None
 
         # Determine target resolution
@@ -132,41 +207,41 @@ class RemoteStableDiffusionProvider:
 
         headers = {"ngrok-skip-browser-warning": "any", "User-Agent": "AuraClient/1.0"}
 
-        try:
-            print(f"🎨 [COLAB SD]: Dispatching txt2img generation to {base_url}...")
-            async with httpx.AsyncClient(timeout=90.0) as client:
-                response = await client.post(
-                    f"{base_url}/sdapi/v1/txt2img",
-                    json=payload,
-                    headers=headers
-                )
+        # Attempt generation across active nodes with automatic failover
+        for idx, (node_url, node_info) in enumerate(active_nodes):
+            device_label = node_info.get("device", "unknown")
+            print(f"🎨 [REMOTE SD POOL]: Dispatching txt2img generation to {node_url} (Device: {device_label}, Node {idx+1}/{len(active_nodes)})...")
+            try:
+                async with httpx.AsyncClient(timeout=90.0) as client:
+                    response = await client.post(
+                        f"{node_url}/sdapi/v1/txt2img",
+                        json=payload,
+                        headers=headers
+                    )
 
-                if response.status_code == 200:
-                    data = response.json()
-                    images = data.get("images", [])
-                    if images:
-                        raw_b64 = images[0]
-                        if "," in raw_b64:
-                            raw_b64 = raw_b64.split(",")[1]
+                    if response.status_code == 200:
+                        data = response.json()
+                        images = data.get("images", [])
+                        if images:
+                            raw_b64 = images[0]
+                            if "," in raw_b64:
+                                raw_b64 = raw_b64.split(",")[1]
 
-                        img_bytes = base64.b64decode(raw_b64)
-                        file_name = f"aura_{scene}_{uuid.uuid4().hex[:8]}.jpg"
-                        save_path = GENERATED_DIR / file_name
+                            img_bytes = base64.b64decode(raw_b64)
+                            file_name = f"aura_{scene}_{uuid.uuid4().hex[:8]}.jpg"
+                            save_path = GENERATED_DIR / file_name
 
-                        with open(save_path, "wb") as f:
-                            f.write(img_bytes)
+                            with open(save_path, "wb") as f:
+                                f.write(img_bytes)
 
-                        print(f"🔥 [REMOTE STABLE DIFFUSION SUCCESS]: Generated fresh deliverable via Colab SD: {file_name}")
-                        return f"/static/generated/aura/{file_name}"
-                else:
-                    if "ERR_NGROK_3200" in response.text or response.status_code == 404:
-                        print(f"⚠️ [COLAB SD OFFLINE]: Ngrok tunnel at {base_url} is currently offline (Colab session stopped or new URL generated).")
-                        print("💡 Check your Google Colab tab, copy the active URL, and update SD_REMOTE_URL in .env and Render!")
+                            print(f"🔥 [REMOTE STABLE DIFFUSION SUCCESS]: Generated fresh deliverable via {node_url} ({device_label}): {file_name}")
+                            return f"/static/generated/aura/{file_name}"
                     else:
-                        print(f"⚠️ [COLAB SD ERROR]: Remote server returned status {response.status_code}")
-        except Exception as e:
-            print(f"⚠️ [REMOTE STABLE DIFFUSION PROVIDER]: Connection failed to {base_url}: {e}")
+                        print(f"⚠️ [REMOTE SD WARNING]: Node {node_url} returned HTTP {response.status_code}.")
+            except Exception as e:
+                print(f"⚠️ [REMOTE SD FAILOVER]: Node {node_url} connection failed: {e}. Seamlessly trying next node in pool...")
 
+        print("ℹ️ [REMOTE SD POOL]: All remote nodes exhausted or unavailable. Cascading to local identity synthesizer...")
         return None
 
 remote_sd_provider = RemoteStableDiffusionProvider()
