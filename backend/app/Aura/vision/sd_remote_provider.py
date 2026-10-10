@@ -178,12 +178,10 @@ class RemoteStableDiffusionProvider:
             outfit = "wearing a casual cute white tank top with lace trim and comfy shorts"
             actual_scene = scene
 
+        # Crisp, high-impact positive prompt strictly within SD 1.5 CLIP 77 token boundary
         positive_prompt = (
-            f"A hyper-realistic, candid selfie of a 22-year-old Slavic-fusion beauty, Aura, "
-            f"fair porcelain skin, deep hazel-brown almond eyes, dark brown layered silky hair, "
-            f"{outfit}, in {actual_scene} atmosphere, natural skin texture with visible authentic pores, "
-            f"slight blush, realistic smartphone camera grain, shallow depth of field, "
-            f"soft warm ambient lighting, masterpiece, 8k uhd, candid photography"
+            f"candid selfie of aura_woman, 22yo, fair skin, hazel eyes, dark brown hair, "
+            f"{outfit}, {actual_scene}, natural skin pores, soft lighting, masterpiece photo"
         )
 
         if explicit_nude:
@@ -252,9 +250,11 @@ class RemoteStableDiffusionProvider:
         # Attempt generation across active nodes with automatic failover
         for idx, (node_url, node_info) in enumerate(active_nodes):
             device_label = node_info.get("device", "unknown")
-            print(f"🎨 [REMOTE SD POOL]: Dispatching txt2img generation to {node_url} (Device: {device_label}, Node {idx+1}/{len(active_nodes)})...")
+            is_cpu = "cpu" in str(device_label).lower()
+            timeout_secs = 240.0 if is_cpu else 90.0
+            print(f"🎨 [REMOTE SD POOL]: Dispatching txt2img generation to {node_url} (Device: {device_label}, Timeout: {timeout_secs}s, Node {idx+1}/{len(active_nodes)})...")
             try:
-                async with httpx.AsyncClient(timeout=90.0) as client:
+                async with httpx.AsyncClient(timeout=timeout_secs) as client:
                     response = await client.post(
                         f"{node_url}/sdapi/v1/txt2img",
                         json=payload,

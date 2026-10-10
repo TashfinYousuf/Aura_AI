@@ -95,6 +95,7 @@ def launch_server():
             pass
     # Check for custom trained Aura LoRA
     lora_loaded = False
+    from pathlib import Path
     possible_loras = [
         "aura_v1.safetensors",
         "/kaggle/working/aura_v1.safetensors",
@@ -108,6 +109,17 @@ def launch_server():
         "backend/app/static/models/aura_lora",
         "Aura_AI/backend/app/static/models/aura_v1.safetensors"
     ]
+    # Dynamically find any aura_v1.safetensors in working tree
+    for search_root in ["/kaggle/working", "/content", "."]:
+        root_path = Path(search_root)
+        if root_path.exists():
+            try:
+                for found in root_path.rglob("aura_v1.safetensors"):
+                    found_str = str(found)
+                    if found_str not in possible_loras:
+                        possible_loras.insert(0, found_str)
+            except Exception:
+                pass
     for lp in possible_loras:
         if os.path.exists(lp):
             try:
