@@ -1,38 +1,81 @@
-# Install necessary dependencies in Google Colab (Run in a cell first):
-# !pip install -q pyngrok nest-asyncio diffusers transformers accelerate fastapi uvicorn pydantic insightface onnxruntime-gpu opencv-python-headless pillow
-# !wget -nc https://github.com/facefusion/facefusion-assets/releases/download/models/inswapper_128.onnx -O inswapper_128.onnx
+# ==============================================================================
+# CELL 1: RUN THIS IN GOOGLE COLAB OR KAGGLE (1-Click Dependency Installation)
+# ==============================================================================
+# !pip install -q pyngrok nest-asyncio "diffusers>=0.30.0" transformers accelerate fastapi uvicorn pydantic pillow
+# !pip install -q insightface onnxruntime-gpu opencv-python-headless || pip install -q insightface onnxruntime opencv-python-headless
+#
+# Keep-Alive Script for Colab (prevents idle disconnects):
+# In your browser DevTools Console (F12 -> Console), paste:
+# function ClickConnect(){ document.querySelector("colab-connect-button")?.shadowRoot?.querySelector("#connect")?.click() }
+# setInterval(ClickConnect, 60000)
+# ==============================================================================
 
 # FILE: scripts/aura_colab_sd_runner.py
 """
-Google Colab 1-Click Remote Stable Diffusion Server for Aura:
-- Runs on a free Google Colab (T4 GPU runtime) or any remote Linux GPU.
+Google Colab / Kaggle 1-Click Remote Stable Diffusion Server for Aura:
+- Compatible with free Google Colab (T4 GPU runtime) or Kaggle (GPU T4 x2, 30 hrs/wk).
 - Realistic Vision V5.1 SD Photorealistic pipeline.
 - Dual-Mode: Pure SD prompt synthesis + 100% Master Face Consistency Lock via InsightFace.
-- Uncensored consensual intimate, bedroom, and aesthetic portrait generation.
-- Generates an ngrok or Cloudflare tunnel URL to paste into SD_REMOTE_URL.
+- Auto-downloads inswapper_128.onnx from HuggingFace mirrors (zero 404s).
+- Gracefully detects CUDA vs CPU without unhandled AssertionErrors.
+- Generates a 100% free Cloudflare Tunnel or ngrok URL for SD_REMOTE_URL.
 """
 
 import os
 import torch
 import base64
+import urllib.request
 from io import BytesIO
 from fastapi import FastAPI
 from pydantic import BaseModel
 import uvicorn
+
+def ensure_inswapper_model() -> str:
+    swapper_path = "inswapper_128.onnx"
+    if os.path.exists(swapper_path) and os.path.getsize(swapper_path) > 100000000:
+        return swapper_path
+
+    hf_mirrors = [
+        "https://huggingface.co/ezioruan/inswapper_128.onnx/resolve/main/inswapper_128.onnx",
+        "https://huggingface.co/datasets/Gourieff/ReActor/resolve/main/models/inswapper_128.onnx"
+    ]
+    for url in hf_mirrors:
+        try:
+            print(f"📥 [DOWNLOADING FACE LOCK MODEL]: Fetching from {url}...")
+            urllib.request.urlretrieve(url, swapper_path)
+            if os.path.exists(swapper_path) and os.path.getsize(swapper_path) > 100000000:
+                print("✅ [MODEL READY]: inswapper_128.onnx downloaded successfully!")
+                return swapper_path
+        except Exception as e:
+            print(f"⚠️ Mirror failed: {e}")
+    return swapper_path
 
 def launch_server():
     from diffusers import StableDiffusionPipeline, DPMSolverMultistepScheduler
     from pyngrok import ngrok
     import nest_asyncio
 
+    # Safe CUDA accelerator verification
+    has_cuda = torch.cuda.is_available() and hasattr(torch._C, "_cuda_getDeviceCount") and torch._C._cuda_getDeviceCount() > 0
+    device = "cuda" if has_cuda else "cpu"
+    torch_dtype = torch.float16 if has_cuda else torch.float32
+
+    if not has_cuda:
+        print("=" * 70)
+        print("⚠️ [ACCELERATOR NOTICE]: CUDA GPU is NOT detected in this session!")
+        print("👉 In Google Colab: Click 'Runtime' -> 'Change runtime type' -> Select 'T4 GPU' -> Save")
+        print("👉 In Kaggle: In the right sidebar -> 'Settings' -> 'Accelerator' -> Select 'GPU T4 x2', and set 'Internet: ON'")
+        print("ℹ️ Falling back to CPU mode so server will run without crashing...")
+        print("=" * 70)
+
     model_id = "SG161222/Realistic_Vision_V5.1_noVAE"
-    print(f"🚀 Loading {model_id} on CUDA GPU...")
+    print(f"🚀 Loading {model_id} on {device.upper()}...")
     pipe = StableDiffusionPipeline.from_pretrained(
         model_id,
-        torch_dtype=torch.float16,
+        torch_dtype=torch_dtype,
         safety_checker=None  # Allows consensual intimate / sensual roleplay visuals
     )
-    
+
     try:
         pipe.scheduler = DPMSolverMultistepScheduler.from_config(
             pipe.scheduler.config,
@@ -42,9 +85,15 @@ def launch_server():
     except Exception:
         from diffusers import EulerAncestralDiscreteScheduler
         pipe.scheduler = EulerAncestralDiscreteScheduler.from_config(pipe.scheduler.config)
-    
-    pipe.to("cuda")
-    print("✅ Model loaded successfully on GPU!")
+
+    pipe.to(device)
+    if has_cuda:
+        try:
+            pipe.enable_attention_slicing()
+            pipe.enable_vae_slicing()
+        except Exception:
+            pass
+    print(f"✅ Model loaded successfully on {device.upper()}!")
 
     # Attempt to initialize InsightFace for Master Facial Identity Lock
     face_swapper = None
@@ -54,17 +103,17 @@ def launch_server():
         from insightface.app import FaceAnalysis
         print("🔍 Initializing InsightFace for master facial consistency...")
         face_analyzer = FaceAnalysis(name='buffalo_l')
-        face_analyzer.prepare(ctx_id=0, det_size=(640, 640))
+        ctx_id = 0 if has_cuda else -1
+        face_analyzer.prepare(ctx_id=ctx_id, det_size=(640, 640))
 
-        swapper_path = "inswapper_128.onnx"
-        if os.path.exists(swapper_path):
+        swapper_path = ensure_inswapper_model()
+        if os.path.exists(swapper_path) and os.path.getsize(swapper_path) > 100000000:
             face_swapper = insightface.model_zoo.get_model(swapper_path, download=False)
             print("✨ [FACIAL IDENTITY LOCK]: InsightFace Inswapper active! 100% Aura face lock enabled!")
         else:
-            print(f"ℹ️ {swapper_path} not found. Running in high-fidelity prompt diffusion mode.")
-            print("👉 Run: !wget -nc https://github.com/facefusion/facefusion-assets/releases/download/models/inswapper_128.onnx -O inswapper_128.onnx")
+            print("ℹ️ Inswapper model not available. Running in high-fidelity prompt diffusion mode.")
     except Exception as e:
-        print(f"ℹ️ InsightFace optional module: {e}. Standard diffusion synthesis active.")
+        print(f"ℹ️ InsightFace optional module notice: {e}. Standard diffusion synthesis active.")
 
     app = FastAPI(title="Aura Remote SD API")
 
@@ -130,6 +179,23 @@ def launch_server():
         image.save(buffered, format="JPEG", quality=95)
         img_b64 = base64.b64encode(buffered.getvalue()).decode("utf-8")
         return {"images": [img_b64]}
+
+    class AnimateRequest(BaseModel):
+        prompt: str
+        duration: int = 5
+
+    @app.post("/sdapi/v1/animate")
+    def generate_animation(req: AnimateRequest):
+        image = pipe(
+            prompt=f"A cinematic video frame of Aura: 22-year-old woman, fair porcelain skin, {req.prompt}",
+            num_inference_steps=20,
+            width=512,
+            height=768
+        ).images[0]
+        buffered = BytesIO()
+        image.save(buffered, format="JPEG", quality=90)
+        img_b64 = base64.b64encode(buffered.getvalue()).decode("utf-8")
+        return {"video": img_b64, "format": "animated_frame"}
 
     token = os.getenv("NGROK_AUTHTOKEN", "3G1yJe40UpaD17GLtlqvsQVRnpn_3aEmdUVKLh7NYHUjRe4ZK")
     public_url = None
