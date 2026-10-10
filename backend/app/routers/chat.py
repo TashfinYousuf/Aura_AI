@@ -10,6 +10,7 @@ import uuid
 import random
 import traceback
 from datetime import datetime
+from pathlib import Path
 from typing import List, Optional
 
 from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks
@@ -339,6 +340,89 @@ async def get_chat_history(user_id: str, db: Session = Depends(get_db)):
         return {"status": "success", "history": history}
     except Exception as e:
         return {"status": "error", "detail": str(e)}
+
+@router.get("/media/{user_id}")
+async def get_media_gallery(user_id: str, db: Session = Depends(get_db)):
+    """
+    Returns ALL historical media items (images, selfies, and voice notes)
+    across entire conversation history, plus any generated deliverables on disk.
+    Ensures the user's gallery never loses past photos or clips.
+    """
+    try:
+        # 1. Fetch all conversation memories for user without restrictive limit
+        memories = db.query(SemanticMemory).filter(
+            SemanticMemory.user_id == user_id,
+            SemanticMemory.memory_type == "conversation"
+        ).order_by(SemanticMemory.created_at.desc()).all()
+
+        media_items = []
+        seen_urls = set()
+
+        for mem in memories:
+            if not mem or not mem.content:
+                continue
+            content_str = str(mem.content)
+            try:
+                msg_data = json.loads(content_str)
+                img = msg_data.get("image_url") or msg_data.get("imageUrl")
+                audio = msg_data.get("audio_base64") or msg_data.get("audioBase64")
+                video = msg_data.get("video_url") or msg_data.get("videoUrl")
+                is_voice = bool(msg_data.get("is_voice_note") or msg_data.get("isVoiceNote") or audio)
+
+                if img and img not in seen_urls:
+                    seen_urls.add(img)
+                    media_items.append({
+                        "id": msg_data.get("id", str(mem.id)),
+                        "type": "image",
+                        "imageUrl": img,
+                        "role": msg_data.get("role", "ai"),
+                        "timestamp": msg_data.get("timestamp") or (mem.created_at.isoformat() if mem.created_at else None),
+                        "caption": msg_data.get("content", "")
+                    })
+                elif is_voice:
+                    media_items.append({
+                        "id": msg_data.get("id", str(mem.id)),
+                        "type": "audio",
+                        "audioBase64": audio,
+                        "isVoiceNote": True,
+                        "role": msg_data.get("role", "ai"),
+                        "timestamp": msg_data.get("timestamp") or (mem.created_at.isoformat() if mem.created_at else None),
+                        "caption": msg_data.get("content", "")
+                    })
+            except json.JSONDecodeError:
+                img_match = re.search(r'\[IMAGE=(https?://[^\]]+)\]', content_str)
+                if img_match:
+                    url = img_match.group(1).strip()
+                    if url not in seen_urls:
+                        seen_urls.add(url)
+                        media_items.append({
+                            "id": str(mem.id),
+                            "type": "image",
+                            "imageUrl": url,
+                            "role": "ai",
+                            "timestamp": mem.created_at.isoformat() if mem.created_at else None,
+                            "caption": content_str.replace(img_match.group(0), "").strip()
+                        })
+
+        # 2. Check disk for any generated assets in static/generated/aura/
+        gen_dir = Path(__file__).resolve().parent.parent / "static" / "generated" / "aura"
+        if gen_dir.exists():
+            for f in sorted(gen_dir.glob("*.jpg"), key=os.path.getmtime, reverse=True):
+                url = f"/static/generated/aura/{f.name}"
+                if url not in seen_urls:
+                    seen_urls.add(url)
+                    media_items.append({
+                        "id": f"disk_{f.stem}",
+                        "type": "image",
+                        "imageUrl": url,
+                        "role": "ai",
+                        "timestamp": datetime.fromtimestamp(os.path.getmtime(f)).isoformat(),
+                        "caption": f"Aura Asset ({f.stem})"
+                    })
+
+        return {"status": "success", "media": media_items, "total": len(media_items)}
+    except Exception as e:
+        return {"status": "error", "detail": str(e), "media": []}
 
 @router.delete("/history/{user_id}")
 async def clear_chat_history(user_id: str, db: Session = Depends(get_db)):

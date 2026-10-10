@@ -20,7 +20,7 @@ class ModelRegistry:
     FAST_MODEL: str = "openai/gpt-oss-20b"
     SMART_MODEL: str = "openai/gpt-oss-120b"
     STRUCTURED_MODEL: str = "openai/gpt-oss-120b"
-    SPECIALIZED_MODEL: str = "qwen/qwen3.8-27b"
+    SPECIALIZED_MODEL: str = "openai/gpt-oss-120b"
 
 class Settings(BaseSettings):
     PROJECT_NAME: str = "Aura Multimodal Companion OS"
@@ -46,7 +46,7 @@ class Settings(BaseSettings):
     FALLBACK_CHAT_MODELS: List[str] = [
         "openai/gpt-oss-120b",
         "openai/gpt-oss-20b",
-        "qwen/qwen3.8-27b"
+        "meta-llama/llama-3.3-70b-versatile"
     ]
     
     # Security & Storage

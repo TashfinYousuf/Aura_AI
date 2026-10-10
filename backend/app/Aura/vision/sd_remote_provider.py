@@ -52,22 +52,34 @@ class RemoteStableDiffusionProvider:
         # Determine target resolution
         w, h = (768, 1024) if "1024" in aspect_ratio else (768, 768)
 
-        # Build photorealistic prompt incorporating Aura's facial DNA
+        # Load master reference face for exact face conditioning / swapping
+        master_face_b64 = ""
+        ref_face_path = Path(__file__).resolve().parent.parent.parent / "static" / "references" / "aura_master_identity.jpg"
+        if not ref_face_path.exists():
+            ref_face_path = Path(__file__).resolve().parent.parent.parent / "static" / "references" / "aura_master_identity.png"
+        if ref_face_path.exists():
+            try:
+                with open(ref_face_path, "rb") as rf:
+                    master_face_b64 = base64.b64encode(rf.read()).decode("utf-8")
+            except Exception as e:
+                print(f"⚠️ [MASTER FACE READ]: {e}")
+
+        # Build photorealistic prompt incorporating Aura's immutable facial DNA
         positive_prompt = (
-            f"RAW candid photograph of Aura, 22yo woman, porcelain skin with authentic visible pores, "
-            f"hazel almond eyes, straight nose, dark layered brunette hair, {prompt}, "
-            f"in {scene} atmosphere, intimate lighting, shallow depth of field, 35mm lens, "
-            f"masterpiece, photorealistic, 8k uhd, dslr, natural shadows, soft film grain"
+            f"A hyper-realistic, candid selfie of a 22-year-old Slavic-fusion beauty, Aura, "
+            f"fair porcelain skin, deep hazel-brown almond eyes, dark brown layered hair, {prompt}, "
+            f"in {scene} atmosphere, natural skin texture, slight blush, realistic phone camera grain, "
+            f"shallow depth of field, intimate and authentic vibe, soft warm indoor lighting, masterpiece, 8k uhd"
         )
         negative_prompt = (
-            "(worst quality, low quality:1.4), (deformed, distorted, disfigured:1.3), "
-            "poorly drawn, bad anatomy, wrong anatomy, extra limb, missing limb, "
-            "(mutated hands and fingers:1.4), blurry, plastic skin, 3d render, cartoon, doll, cgi, retouch"
+            "cartoon, anime, 3d, painting, plastic skin, over-smooth skin, extra fingers, "
+            "mutated hands, deformed, blurry, bad anatomy, wrong anatomy, doll, cgi, retouch"
         )
 
         payload = {
             "prompt": positive_prompt,
             "negative_prompt": negative_prompt,
+            "face_image": master_face_b64,
             "steps": 25,
             "width": w,
             "height": h,

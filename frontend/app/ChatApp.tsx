@@ -29,6 +29,9 @@ export default function ChatApp({ currentUser }: { currentUser: User }) {
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [isIncognito, setIsIncognito] = useState(false);
   const [showMediaGallery, setShowMediaGallery] = useState(false);
+  const [galleryItems, setGalleryItems] = useState<any[]>([]);
+  const [isLoadingGallery, setIsLoadingGallery] = useState(false);
+  const [galleryFilter, setGalleryFilter] = useState<'all' | 'photos' | 'voice'>('all');
   const [showDashboard, setShowDashboard] = useState(false);
   const [hoveredMsgIdx, setHoveredMsgIdx] = useState<number | null>(null);
   const [replyingToMsg, setReplyingToMsg] = useState<{ id: string; preview: string; role: 'ai' | 'user' } | null>(null);
@@ -67,6 +70,28 @@ export default function ChatApp({ currentUser }: { currentUser: User }) {
       console.warn("Could not load chat history:", err);
     }
   }, [currentUser?.uid]);
+
+  // Dedicated Complete Media Gallery Loader
+  const fetchMediaGallery = useCallback(async () => {
+    if (!currentUser?.uid) return;
+    setIsLoadingGallery(true);
+    try {
+      const res = await axios.get(`${API_BASE}/api/chat/media/${currentUser.uid}?t=${Date.now()}`);
+      if (res.data?.status === "success" && Array.isArray(res.data?.media)) {
+        setGalleryItems(res.data.media);
+      }
+    } catch (err) {
+      console.warn("Could not load media gallery:", err);
+    } finally {
+      setIsLoadingGallery(false);
+    }
+  }, [currentUser?.uid]);
+
+  useEffect(() => {
+    if (showMediaGallery) {
+      fetchMediaGallery();
+    }
+  }, [showMediaGallery, fetchMediaGallery]);
 
   // Relationship Progression Analytics
   useEffect(() => {
@@ -477,32 +502,136 @@ export default function ChatApp({ currentUser }: { currentUser: User }) {
       )}
 
       {/* Media Gallery Section */}
-      {showMediaGallery && (
-        <div className="absolute inset-0 bg-gray-950/95 z-40 flex flex-col p-6 animate-in fade-in slide-in-from-bottom-10">
-          <div className="flex justify-between items-center mb-6">
-            <h2 className="text-2xl font-bold text-transparent bg-clip-text bg-linear-to-r from-pink-400 to-indigo-400">Media & Voice Notes</h2>
-            <button onClick={() => setShowMediaGallery(false)} className="p-2 bg-gray-800 rounded-full text-white hover:bg-gray-700">✕</button>
-          </div>
-          <div className="grid grid-cols-2 md:grid-cols-3 gap-4 overflow-y-auto pb-20">
-            {messages.filter(m => m.imageUrl || m.isVoiceNote).reverse().map((media, i) => (
-              <div key={i} className="bg-gray-900 border border-gray-800 rounded-xl p-3 flex flex-col gap-2 shadow-lg">
-                {media.imageUrl && (
-                  <img
-                    src={resolveImageUrl(media.imageUrl)}
-                    alt="Aura Asset"
-                    className="w-full max-h-72 sm:max-h-80 object-cover rounded-xl mt-2 shadow-md border border-gray-700/50"
-                    loading="lazy"
-                  />
-                )}
-                {media.isVoiceNote && (
-                  <audio controls className="w-full h-8" src={media.userAudioUrl || `data:audio/mp3;base64,${media.audioBase64}`} />
-                )}
-                <span className="text-xs text-gray-500 text-center">{media.role === 'ai' ? 'Aura' : 'You'}</span>
+      {showMediaGallery && (() => {
+        // Merge API gallery items with any unsaved current messages
+        const seenUrls = new Set<string>();
+        const combined: any[] = [];
+        
+        galleryItems.forEach(item => {
+          const key = item.imageUrl || item.audioBase64 || item.id;
+          if (key && !seenUrls.has(key)) {
+            seenUrls.add(key);
+            combined.push(item);
+          }
+        });
+
+        // Add any recent active messages if not already in galleryItems
+        messages.filter(m => m.imageUrl || m.isVoiceNote).reverse().forEach(m => {
+          const key = m.imageUrl || m.audioBase64 || m.id;
+          if (key && !seenUrls.has(key)) {
+            seenUrls.add(key);
+            combined.push({
+              id: m.id || Math.random().toString(),
+              type: m.imageUrl ? 'image' : 'audio',
+              imageUrl: m.imageUrl,
+              audioBase64: m.audioBase64,
+              userAudioUrl: m.userAudioUrl,
+              isVoiceNote: m.isVoiceNote,
+              role: m.role,
+              caption: m.content
+            });
+          }
+        });
+
+        const filtered = combined.filter(item => {
+          if (galleryFilter === 'photos') return !!item.imageUrl;
+          if (galleryFilter === 'voice') return !!item.isVoiceNote || !!item.audioBase64;
+          return true;
+        });
+
+        return (
+          <div className="absolute inset-0 bg-gray-950/95 z-40 flex flex-col p-6 animate-in fade-in slide-in-from-bottom-10">
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-6">
+              <div>
+                <h2 className="text-2xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-pink-400 to-indigo-400">
+                  Media & Memory Vault
+                </h2>
+                <p className="text-xs text-gray-400 mt-1">
+                  {filtered.length} preserved moment{filtered.length === 1 ? '' : 's'} across all conversations
+                </p>
               </div>
-            ))}
+
+              <div className="flex items-center gap-2">
+                {/* Filter Pills */}
+                <div className="flex bg-gray-900 border border-gray-800 rounded-lg p-1 text-xs">
+                  <button
+                    onClick={() => setGalleryFilter('all')}
+                    className={`px-3 py-1 rounded-md transition-all ${galleryFilter === 'all' ? 'bg-pink-600 text-white font-medium' : 'text-gray-400 hover:text-white'}`}
+                  >
+                    All
+                  </button>
+                  <button
+                    onClick={() => setGalleryFilter('photos')}
+                    className={`px-3 py-1 rounded-md transition-all ${galleryFilter === 'photos' ? 'bg-pink-600 text-white font-medium' : 'text-gray-400 hover:text-white'}`}
+                  >
+                    Photos
+                  </button>
+                  <button
+                    onClick={() => setGalleryFilter('voice')}
+                    className={`px-3 py-1 rounded-md transition-all ${galleryFilter === 'voice' ? 'bg-pink-600 text-white font-medium' : 'text-gray-400 hover:text-white'}`}
+                  >
+                    Voice Notes
+                  </button>
+                </div>
+                <button
+                  onClick={() => setShowMediaGallery(false)}
+                  className="p-2 bg-gray-800 rounded-full text-white hover:bg-gray-700 transition-colors"
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
+
+            {isLoadingGallery ? (
+              <div className="flex-1 flex flex-col items-center justify-center text-gray-400 gap-3">
+                <div className="w-8 h-8 border-2 border-pink-500 border-t-transparent rounded-full animate-spin" />
+                <p className="text-sm">Fetching all historical media...</p>
+              </div>
+            ) : filtered.length === 0 ? (
+              <div className="flex-1 flex flex-col items-center justify-center text-gray-500 gap-2">
+                <span className="text-4xl">📸</span>
+                <p className="text-sm font-medium">No media found in vault</p>
+                <p className="text-xs text-gray-600">Ask Aura for a selfie or send a voice note to start building your gallery!</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 overflow-y-auto pb-20">
+                {filtered.map((media, i) => (
+                  <div key={media.id || i} className="bg-gray-900/90 border border-gray-800/80 hover:border-pink-500/30 transition-all rounded-xl p-3 flex flex-col gap-2 shadow-lg group">
+                    {media.imageUrl && (
+                      <div className="relative overflow-hidden rounded-lg">
+                        <img
+                          src={resolveImageUrl(media.imageUrl)}
+                          alt="Aura Deliverable"
+                          className="w-full max-h-72 sm:max-h-80 object-cover rounded-lg shadow-md border border-gray-700/50 cursor-pointer transform group-hover:scale-102 transition-transform duration-300"
+                          loading="lazy"
+                          onClick={() => setViewingImage(media.imageUrl)}
+                        />
+                        <div
+                          className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity cursor-pointer rounded-lg"
+                          onClick={() => setViewingImage(media.imageUrl)}
+                        >
+                          <span className="text-xs bg-black/70 text-white px-2 py-1 rounded-md backdrop-blur-sm">🔍 Zoom</span>
+                        </div>
+                      </div>
+                    )}
+                    {media.isVoiceNote && (
+                      <audio controls className="w-full h-8 mt-1" src={media.userAudioUrl || `data:audio/mp3;base64,${media.audioBase64}`} />
+                    )}
+                    <div className="flex items-center justify-between text-[11px] text-gray-400 px-1 mt-1">
+                      <span>{media.role === 'ai' ? '💜 Aura' : '👤 You'}</span>
+                      {media.timestamp && (
+                        <span className="text-gray-500 text-[10px]">
+                          {new Date(media.timestamp).toLocaleDateString([], { month: 'short', day: 'numeric' })}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* Click-to-Zoom Modal */}
       {viewingImage && (

@@ -19,7 +19,7 @@ class ModelRouter:
 
     def select_model(self, tier: ExecutionTier) -> str:
         if tier == ExecutionTier.ADULT:
-            return models.SPECIALIZED_MODEL  # qwen/qwen3.8-27b (uncensored intimate roleplay)
+            return models.SPECIALIZED_MODEL  # openai/gpt-oss-120b (passionate intimate roleplay)
         elif tier == ExecutionTier.REASONING:
             return models.SMART_MODEL
         elif tier == ExecutionTier.STRUCTURED:

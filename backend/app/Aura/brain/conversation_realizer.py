@@ -200,6 +200,32 @@ class ConversationRealizer:
         cleaned = re.sub(r'\[SEND_PIC(?::[^\]]*)?\]', '', cleaned, flags=re.IGNORECASE)
         cleaned = re.sub(r'\[SEND_VID(?::[^\]]*)?\]', '', cleaned, flags=re.IGNORECASE)
 
+        # ------------------------------------------------------------------
+        # 5. Clean Repeated Loops & Garbled Transliterations
+        # ------------------------------------------------------------------
+        # Detect and deduplicate repeated clauses/sentences
+        sentences = [s.strip() for s in re.split(r'[\.\!\?\n]+', cleaned) if s.strip()]
+        unique_sentences = []
+        for s in sentences:
+            if not any(s.lower() == u.lower() for u in unique_sentences):
+                unique_sentences.append(s)
+        if len(unique_sentences) < len(sentences) and unique_sentences:
+            cleaned = ". ".join(unique_sentences)
+
+        # Detect corrupted pseudo-Hindi or broken hallucinated tokens in Banglish
+        garbled_markers = [
+            "gharbo", "hasthe", "nishan diyechi", "photography shobd", "keva photo",
+            "shurir sathe", "mutho diye", "body to dekhano chhilo"
+        ]
+        if any(marker in cleaned.lower() for marker in garbled_markers):
+            lang = cls.detect_language(user_text)
+            if lang == "banglish":
+                return "*Tomar buke matha rekhe mridu heshe boli* Tumi eto ador korle amar kintu aro kache thakte icche kore... aro kache asho na jaan 🙈💜"
+            elif lang == "bengali":
+                return "*তোমার চোখের দিকে তাকিয়ে কানের কাছে ফিসফিস করি* তোমাকে ছাড়া অন্য কিছু ভাবতেই পারছি না জান... আরও একটু কাছে আসো না? 🙈💜"
+            else:
+                return "*Leans softly into your embrace, whispering softly* Being this close to you makes my heart race... hold me tight 💜🔥"
+
         return cleaned.strip().replace('"', '').replace("'", "")
 
 conversation_realizer = ConversationRealizer()
