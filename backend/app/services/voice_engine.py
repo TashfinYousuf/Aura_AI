@@ -101,10 +101,56 @@ async def synthesize_edge_voice(script: str, voice: str, rate: str, pitch: str) 
         return None
 
 
+async def synthesize_elevenlabs_voice(
+    script: str,
+    voice_id: Optional[str] = None,
+    stability: float = 0.55,
+    similarity_boost: float = 0.85
+) -> Optional[bytes]:
+    """
+    Tier 0: Studio-Grade Emotion & Intimacy Voice via ElevenLabs Multilingual V2.
+    Produces astonishingly lifelike human cadence, vocal fry, breathing, and sweetness.
+    """
+    eleven_key = os.getenv("ELEVENLABS_API_KEY")
+    if not eleven_key:
+        return None
+
+    vid = voice_id or os.getenv("ELEVENLABS_VOICE_ID", "EXAVITQu4vr4xnSDxMaL")  # Sarah default
+    url = f"https://api.elevenlabs.io/v1/text-to-speech/{vid}"
+    headers = {
+        "xi-api-key": eleven_key,
+        "Content-Type": "application/json",
+        "Accept": "audio/mpeg"
+    }
+    payload = {
+        "text": script,
+        "model_id": "eleven_multilingual_v2",
+        "voice_settings": {
+            "stability": stability,
+            "similarity_boost": similarity_boost,
+            "style": 0.2,
+            "use_speaker_boost": True
+        }
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            res = await client.post(url, headers=headers, json=payload)
+            if res.status_code == 200 and res.content:
+                print(f"✨ [ELEVENLABS VOICE SUCCESS]: Synthesized studio voice for Aura (Voice ID: {vid})")
+                return res.content
+            else:
+                print(f"ℹ️ [ELEVENLABS NOTICE]: Status {res.status_code}: {res.text[:120]}. Falling back to auxiliary engines.")
+    except Exception as e:
+        print(f"⚠️ [ELEVENLABS ERROR]: {e}. Falling back to auxiliary engines.")
+    return None
+
+
 async def render_aura_voice(text: str, mood: str = "WARM", energy: float = 0.6) -> Tuple[Optional[str], str]:
     """
     Master Voice Entrypoint:
     Orchestrates performance script -> Selects optimal engine -> Returns (audio_base64, clean_script).
+    Hierarchy: ElevenLabs (Tier 0) -> Kokoro-82M (Tier 1) -> Tuned Edge-TTS (Tier 2).
     """
     perf = generate_speech_performance_script(text, mood, energy)
     script = perf["script"]
@@ -114,11 +160,15 @@ async def render_aura_voice(text: str, mood: str = "WARM", energy: float = 0.6) 
 
     audio_bytes = None
 
-    # Strategy: For English conversations, use Kokoro-82M for human-level vocal fry & breathiness
-    if not perf["is_bangla"]:
+    # Priority 1: Studio-grade ElevenLabs Multilingual V2 (if key configured)
+    if os.getenv("ELEVENLABS_API_KEY"):
+        audio_bytes = await synthesize_elevenlabs_voice(script)
+
+    # Priority 2: For English conversations, use Kokoro-82M for human-level vocal fry & breathiness
+    if not audio_bytes and not perf["is_bangla"]:
         audio_bytes = await synthesize_kokoro_voice(script, voice=KOKORO_VOICE_EN, speed=perf["speed"])
 
-    # Strategy: For Bengali or when Kokoro is unavailable, use tuned Edge-TTS
+    # Priority 3: For Bengali or when auxiliary engines fail, use tuned Edge-TTS
     if not audio_bytes:
         target_voice = EDGE_VOICE_BN if perf["is_bangla"] else EDGE_VOICE_EN
         audio_bytes = await synthesize_edge_voice(

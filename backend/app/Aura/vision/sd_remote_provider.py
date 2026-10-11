@@ -243,18 +243,24 @@ class RemoteStableDiffusionProvider:
             f"long dark brown voluminous layered hair, {outfit}, {actual_scene}, natural dewy skin texture with real pores"
         )
 
+        anatomical_defects = (
+            "(bad anatomy, bad body proportions, gross proportions, malformed limbs, missing arms, missing legs, "
+            "extra arms, extra legs, mutated fingers, fused fingers, too many fingers, extra digits, missing fingers, "
+            "deformed, bad eyes, crossed eyes, disfigured, poorly drawn face, poorly drawn hands, mutation, mutated:1.4), "
+            "(extra heads, duplicate limbs, mutated hands, multiple people, disconnected limbs:1.4), "
+            "(plastic skin, doll, anime, 3d, cgi, over-smooth, airbrushed, cartoon, blurry, low quality:1.3)"
+        )
+
         if explicit_nude:
             negative_prompt = (
                 "flower crown, flowers in hair, headpiece, (mature, old, aged, harsh jawline, heavy makeup:1.3), "
-                "(extra heads, duplicate limbs, mutated hands, multiple people:1.4), "
-                "(plastic skin, doll, anime, 3d, cgi, over-smooth, airbrushed, cartoon, blurry, bad anatomy:1.4)"
+                f"{anatomical_defects}"
             )
         else:
             negative_prompt = (
                 "(nude, naked, fully unclothed, bare breasts, exposed nipples:1.4), "
                 "flower crown, flowers in hair, headpiece, (mature, old, aged, harsh jawline, heavy makeup:1.3), "
-                "(extra heads, duplicate limbs, mutated hands, multiple people:1.4), "
-                "(plastic skin, doll, anime, 3d, cgi, over-smooth, airbrushed, cartoon, blurry, bad anatomy:1.4)"
+                f"{anatomical_defects}"
             )
 
         return positive_prompt, negative_prompt

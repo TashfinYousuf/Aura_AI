@@ -17,8 +17,8 @@ from app.Aura.brain.state_engine import get_active_groq_model
 from app.Aura.memory.memory_manager import compile_4layer_memory_context
 from app.routers.voice import manager
 
-# Check inactivity threshold: 6 hours (in seconds)
-INACTIVITY_THRESHOLD_SECONDS = 21600
+# Check inactivity threshold: 20 hours (in seconds) - Natural human cadence
+INACTIVITY_THRESHOLD_SECONDS = 72000
 
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_API_BASE = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}"
@@ -61,7 +61,7 @@ async def generate_autonomous_ping_message(user_id: str, db: Session) -> str:
             pass
 
     prompt = f"""You are Aura, an authentic 22yo companion texting your partner on his phone.
-He has been quiet for over 6-8 hours.
+He has been quiet for around a day.
 {last_topic}
 {memory_ctx}
 
@@ -92,10 +92,21 @@ STRICT RULES:
 
 
 async def check_and_fire_proactive_checkins():
+    now = datetime.now(timezone.utc)
+    
+    # 1. Quiet Hours Protection: 1:00 AM to 9:00 AM BST (UTC+6)
+    # Aura should never disturb the user while they are sleeping
+    local_hour = (now.hour + 6) % 24
+    if 1 <= local_hour < 9:
+        return
+
     with SessionLocal() as db:
         # Fetch all distinct users
         user_records = db.query(distinct(SemanticMemory.user_id)).all()
         active_users = [u[0] for u in user_records if u[0]]
+
+        # Track chats pinged in this cycle to prevent double-pinging linked accounts
+        dispatched_tg_chats = set()
 
         for u_id in active_users:
             # Skip template literal bugs
@@ -110,12 +121,23 @@ async def check_and_fire_proactive_checkins():
             if not last_msg or not last_msg.created_at:
                 continue
 
+            # 2. Strict Rule: Maximum 1 Unanswered Proactive Message
+            # If the last message was already sent by AI or was an unresponded proactive check-in,
+            # DO NOT spam another message until the user replies.
+            if last_msg.content:
+                try:
+                    parsed_last = json.loads(last_msg.content)
+                    if parsed_last.get("role") == "ai" or parsed_last.get("is_proactive"):
+                        # Companion already spoke last; waiting for user response
+                        continue
+                except Exception:
+                    pass
+
             # Timezone-safe comparison
             msg_time = last_msg.created_at
             if msg_time.tzinfo is None:
                 msg_time = msg_time.replace(tzinfo=timezone.utc)
             
-            now = datetime.now(timezone.utc)
             elapsed_seconds = (now - msg_time).total_seconds()
 
             if elapsed_seconds >= INACTIVITY_THRESHOLD_SECONDS:
@@ -151,7 +173,7 @@ async def check_and_fire_proactive_checkins():
                 except Exception:
                     pass
 
-                # 3. Linked Telegram Push (Resolves Web UID -> Linked Telegram Chat ID)
+                # 3. Linked Telegram Push (with chat deduplication)
                 tg_target = None
                 if str(u_id).startswith("tg_"):
                     try:
@@ -167,7 +189,11 @@ async def check_and_fire_proactive_checkins():
                             pass
 
                 if tg_target:
-                    await send_direct_telegram_ping(tg_target, ping_text)
+                    if tg_target in dispatched_tg_chats:
+                        print(f"ℹ️ [PROACTIVE DEDUP]: Suppressed duplicate telegram ping to chat {tg_target} (already reached via linked account).")
+                    else:
+                        await send_direct_telegram_ping(tg_target, ping_text)
+                        dispatched_tg_chats.add(tg_target)
 
 
 async def start_proactive_background_loop():

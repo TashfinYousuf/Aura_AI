@@ -62,6 +62,8 @@ class Settings(BaseSettings):
     GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "")
     GROQ_API_KEY: str = os.getenv("GROQ_API_KEY", "")
     TELEGRAM_BOT_TOKEN: str = os.getenv("TELEGRAM_BOT_TOKEN", "")
+    ELEVENLABS_API_KEY: str = os.getenv("ELEVENLABS_API_KEY", "")
+    ELEVENLABS_VOICE_ID: str = os.getenv("ELEVENLABS_VOICE_ID", "EXAVITQu4vr4xnSDxMaL")  # Sarah - sweet warm young companion
     # Remote Cloud / Google Colab Stable Diffusion
     SD_REMOTE_URL: str = os.getenv("SD_REMOTE_URL", "")
     COLAB_SD_API_URL: str = os.getenv("COLAB_SD_API_URL", "")

@@ -332,10 +332,11 @@ def launch_server():
 
     @app.post("/sdapi/v1/txt2img")
     def generate_image(req: Txt2ImgRequest):
-        # Strict compact negative prompt (guarantees under 40 CLIP tokens, preventing truncation)
+        # Strict compact negative prompt with anatomical defect protection
         full_neg = req.negative_prompt.strip() if req.negative_prompt.strip() else (
+            "(bad anatomy, bad hands, missing fingers, extra fingers, three legs, malformed limbs, mutated body, disfigured, bad eyes:1.4), "
             "(extra heads, duplicate limbs, mutated hands, multiple people:1.4), "
-            "(plastic skin, doll, anime, 3d, cgi, over-smooth, airbrushed, blurry:1.4)"
+            "(plastic skin, doll, anime, 3d, cgi, over-smooth, airbrushed, blurry:1.3)"
         )
 
         gen_w = min(req.width, 512) if req.width else 512
@@ -383,35 +384,46 @@ def launch_server():
                         if tgt_faces:
                             tgt_faces = sorted(tgt_faces, key=lambda f: (f.bbox[2]-f.bbox[0]) * (f.bbox[3]-f.bbox[1]), reverse=True)
                             main_face = tgt_faces[0]
-                            swapped_np = face_swapper.get(orig_np, main_face, src_face, paste_back=True)
+                            w_f = main_face.bbox[2] - main_face.bbox[0]
+                            h_f = main_face.bbox[3] - main_face.bbox[1]
 
-                            # Seamless soft boundary blending with original image to eliminate mask lines
-                            bbox = [int(b) for b in main_face.bbox]
-                            h_img, w_img = orig_np.shape[:2]
-                            x1, y1 = max(0, bbox[0]), max(0, bbox[1])
-                            x2, y2 = min(w_img, bbox[2]), min(h_img, bbox[3])
+                            # Only swap if face is clearly detected and sufficiently large to avoid blurry artifacts
+                            if w_f >= 55 and h_f >= 55:
+                                swapped_np = face_swapper.get(orig_np, main_face, src_face, paste_back=True)
 
-                            mask = np.zeros((h_img, w_img), dtype=np.float32)
-                            center = ((x1 + x2) // 2, (y1 + y2) // 2)
-                            axes = (max(1, (x2 - x1) // 2), max(1, (y2 - y1) // 2))
-                            cv2.ellipse(mask, center, axes, 0, 0, 360, 1.0, -1)
-                            mask = cv2.GaussianBlur(mask, (31, 31), 11)
-                            mask_3ch = np.repeat(mask[:, :, np.newaxis], 3, axis=2)
+                                # Seamless soft boundary blending with original image to eliminate mask lines
+                                bbox = [int(b) for b in main_face.bbox]
+                                h_img, w_img = orig_np.shape[:2]
+                                x1, y1 = max(0, bbox[0]), max(0, bbox[1])
+                                x2, y2 = min(w_img, bbox[2]), min(h_img, bbox[3])
 
-                            # Seamlessly feather face boundaries into hair and neck
-                            blended_np = (swapped_np.astype(np.float32) * mask_3ch + orig_np.astype(np.float32) * (1.0 - mask_3ch)).astype(np.uint8)
+                                mask = np.zeros((h_img, w_img), dtype=np.float32)
+                                center = ((x1 + x2) // 2, (y1 + y2) // 2)
+                                axes = (max(1, (x2 - x1) // 2), max(1, (y2 - y1) // 2))
+                                cv2.ellipse(mask, center, axes, 0, 0, 360, 1.0, -1)
+                                mask = cv2.GaussianBlur(mask, (35, 35), 12)
+                                mask_3ch = np.repeat(mask[:, :, np.newaxis], 3, axis=2)
 
-                            image = Image.fromarray(cv2.cvtColor(blended_np, cv2.COLOR_BGR2RGB))
-                            image = image.filter(ImageFilter.UnsharpMask(radius=1.2, percent=115, threshold=2))
-                            print("✨ [FACIAL IDENTITY LOCK]: Aura's master face seamlessly locked and blended!")
+                                # Seamlessly feather face boundaries into hair and neck
+                                blended_np = (swapped_np.astype(np.float32) * mask_3ch + orig_np.astype(np.float32) * (1.0 - mask_3ch)).astype(np.uint8)
+
+                                image = Image.fromarray(cv2.cvtColor(blended_np, cv2.COLOR_BGR2RGB))
+                                image = image.filter(ImageFilter.UnsharpMask(radius=1.2, percent=110, threshold=2))
+                                print("✨ [FACIAL IDENTITY LOCK]: Aura's master face seamlessly locked and blended!")
             except Exception as fe:
                 print(f"⚠️ [FACE SWAP NOTICE]: {fe}")
 
         target_w = req.target_width or 768
         target_h = req.target_height or 1024
         if image.size != (target_w, target_h):
-            from PIL import Image
-            image = image.resize((target_w, target_h), Image.Resampling.LANCZOS)
+            from PIL import Image, ImageOps
+            orig_aspect = image.width / image.height
+            target_aspect = target_w / target_h
+            # Avoid stretching by using proportional fit if aspect ratios differ
+            if abs(orig_aspect - target_aspect) > 0.02:
+                image = ImageOps.fit(image, (target_w, target_h), method=Image.Resampling.LANCZOS, centering=(0.5, 0.35))
+            else:
+                image = image.resize((target_w, target_h), Image.Resampling.LANCZOS)
 
         buffered = BytesIO()
         image.save(buffered, format="JPEG", quality=95)

@@ -123,18 +123,18 @@ def create_audit_pdf(output_path: str):
     # Header Banner
     # -------------------------------------------------------------------------
     elements.append(Paragraph("AURA COMPANION OS — ARCHITECTURE & AUDIT REPORT", title_style))
-    elements.append(Paragraph("Autonomous Multimodal Companion | Release v3.7 | Messenger UX & Vision Prompt Precision", subtitle_style))
+    elements.append(Paragraph("Autonomous Multimodal Companion | Release v3.8 | Anti-Spam Cadence, Telegram Photo Card UX, Aspect Ratio & ElevenLabs Voice", subtitle_style))
     elements.append(HRFlowable(width="100%", thickness=1.5, color=PRIMARY, spaceAfter=10))
 
     # Meta Table
     meta_data = [
         [
             Paragraph("<b>Project:</b> Aura Multimodal Companion OS", table_cell),
-            Paragraph("<b>Version:</b> 3.7 (Messenger UX & Vision Prompt Precision)", table_cell)
+            Paragraph("<b>Version:</b> 3.8 (Anti-Spam, Photo Card UX & Studio Voice)", table_cell)
         ],
         [
             Paragraph("<b>Author / Lead:</b> Tashfin Yousuf", table_cell),
-            Paragraph("<b>Audit Date:</b> October 11, 2026", table_cell)
+            Paragraph("<b>Audit Date:</b> October 12, 2026", table_cell)
         ],
         [
             Paragraph("<b>Production Host:</b> Render (FastAPI) + Vercel (Next.js)", table_cell),
@@ -351,6 +351,26 @@ def create_audit_pdf(output_path: str):
             Paragraph("<b>Explicit Nude Fallback Override</b>", table_cell),
             Paragraph("Disconnected if-check logic caused saree/ethnic fallbacks to overwrite explicit nude/naked prompts with lounge shorts.", table_cell),
             Paragraph("Unified if-elif branching with contextual bedding/outfit color recognition (lavender, black satin, crimson silk), guaranteeing 100% prompt fidelity.", table_cell)
+        ],
+        [
+            Paragraph("<b>Proactive Check-In Anti-Spam</b>", table_cell),
+            Paragraph("Aggressive 6h loop repeatedly messaged offline users and sent duplicate pings to linked web and Telegram accounts.", table_cell),
+            Paragraph("Enforced 20h natural cadence, 1-9 AM BST quiet hours, maximum 1 unanswered check-in rule, and Telegram chat deduplication.", table_cell)
+        ],
+        [
+            Paragraph("<b>Photo Card Caption Sprawl</b>", table_cell),
+            Paragraph("Text below images sprawled across wide screen area while image remained small.", table_cell),
+            Paragraph("Implemented Telegram/Messenger photo card with bound max-width and unified caption styling directly beneath visual asset.", table_cell)
+        ],
+        [
+            Paragraph("<b>Aspect Ratio & Anatomical Integrity</b>", table_cell),
+            Paragraph("Unequal aspect ratio stretching (512x768 to 768x1024) distorted faces; lack of body negative tokens caused mutated limbs.", table_cell),
+            Paragraph("Locked proportional scaling via ImageOps.fit, added face box size thresholds, and integrated comprehensive anatomical negative prompts.", table_cell)
+        ],
+        [
+            Paragraph("<b>ElevenLabs Studio Voice Engine</b>", table_cell),
+            Paragraph("Lack of persistent studio-grade vocal identity across languages.", table_cell),
+            Paragraph("Integrated Tier 0 ElevenLabs Multilingual V2 with standard sweet companion voice ('Sarah'), backed by Kokoro-82M and Edge-TTS fallbacks.", table_cell)
         ]
     ]
     incidents_table = Table(incidents_data, colWidths=[120, 185, 235])
@@ -398,7 +418,7 @@ def create_audit_pdf(output_path: str):
 
     elements.append(Spacer(1, 10))
     elements.append(HRFlowable(width="100%", thickness=1, color=BORDER_COL, spaceAfter=6))
-    elements.append(Paragraph("<b>Aura Multimodal Companion OS — Verification Complete</b> | 42/42 Automated Tests Passing | Release v3.7 Synchronized with GitHub main.", ParagraphStyle('Footer', parent=body_style, fontSize=7.5, textColor=TEXT_MUTED, alignment=1)))
+    elements.append(Paragraph("<b>Aura Multimodal Companion OS — Verification Complete</b> | 42/42 Automated Tests Passing | Release v3.8 Synchronized with GitHub main.", ParagraphStyle('Footer', parent=body_style, fontSize=7.5, textColor=TEXT_MUTED, alignment=1)))
 
     doc.build(elements)
     print(f"✅ Audit PDF successfully generated at: {output_path}")

@@ -260,7 +260,11 @@ export const MessageList: React.FC<MessageListProps> = ({
             {/* MESSAGE BUBBLE (TELEGRAM + MESSENGER HYBRID) */}
             <div
               id={`msg-${msg.id}`}
-              className={`max-w-[88%] md:max-w-[72%] rounded-2xl px-4 py-3 shadow-md flex flex-col gap-1.5 relative transition-all duration-300 ${
+              className={`${
+                msg.imageUrl
+                  ? "w-full max-w-[88%] sm:max-w-md"
+                  : "max-w-[88%] md:max-w-[72%] w-fit"
+              } rounded-2xl px-3.5 py-2.5 sm:px-4 sm:py-3 shadow-md flex flex-col gap-1.5 relative transition-all duration-300 ${
                 isUser
                   ? "bg-gradient-to-r from-indigo-600 via-indigo-600 to-purple-600 text-white rounded-br-xs shadow-indigo-950/40"
                   : "bg-gray-800/90 text-gray-100 rounded-bl-xs border border-gray-700/60 backdrop-blur-md shadow-black/20"
@@ -318,25 +322,27 @@ export const MessageList: React.FC<MessageListProps> = ({
                 </div>
               )}
 
-              {/* Image Preview with click-to-zoom */}
+              {/* Image Preview with click-to-zoom (Telegram / Messenger Card) */}
               {msg.imageUrl && (
                 <div
-                  className="relative group overflow-hidden rounded-xl w-48 md:w-56 cursor-pointer shadow-md border border-gray-700/50 hover:opacity-95 transition-opacity mt-1"
+                  className="relative group overflow-hidden rounded-xl w-full cursor-pointer shadow-md border border-gray-700/50 hover:opacity-95 transition-all mt-0.5"
                   onClick={() => setViewingImage(msg.imageUrl!)}
                 >
                   <img
                     src={resolveImageUrl(msg.imageUrl)}
                     alt="Aura Visual Asset"
                     referrerPolicy="no-referrer"
-                    className="w-full h-auto object-cover max-h-72"
+                    className="w-full h-auto object-cover max-h-96 rounded-lg"
                     onError={(e) => {
                       const target = e.target as HTMLImageElement;
                       target.src = "https://placehold.co/512x512/1e1e2f/ffffff?text=Image+Generating...";
                       target.onerror = null;
                     }}
                   />
-                  <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-black/40">
-                    <span className="text-white text-xs font-medium">🔍 Click to zoom</span>
+                  <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-black/40 rounded-lg">
+                    <span className="text-white text-xs font-medium px-2 py-1 bg-black/60 rounded-full backdrop-blur-md">
+                      🔍 Click to zoom
+                    </span>
                   </div>
                 </div>
               )}
@@ -383,9 +389,13 @@ export const MessageList: React.FC<MessageListProps> = ({
                 </div>
               ) : (
                 <div>
-                  <span className="whitespace-pre-wrap leading-relaxed text-sm select-text">
-                    {highlightMatches(msg.content, searchQuery)}
-                  </span>
+                  {msg.content && (
+                    <span className={`whitespace-pre-wrap leading-relaxed text-sm select-text ${
+                      msg.imageUrl ? "mt-1.5 block text-gray-200 font-normal" : ""
+                    }`}>
+                      {highlightMatches(msg.content, searchQuery)}
+                    </span>
+                  )}
 
                   {/* Audio Synthesizer Player for Aura Voice */}
                   {msg.role !== "user" && msg.audioBase64 && (
