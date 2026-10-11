@@ -44,9 +44,10 @@ class ModelRouter:
 
         # -------------------------------------------------------------
         # 1. PRIMARY SOVEREIGN ENGINE: GOOGLE GEMINI (ChatGPT/Gemini Grade)
+        # Bypassed for Adult/Intimate tier to avoid Google cloud moralizing disclaimers
         # -------------------------------------------------------------
         gemini_key = (settings.GEMINI_API_KEY or os.getenv("GEMINI_API_KEY", "")).strip()
-        if gemini_key:
+        if gemini_key and tier != ExecutionTier.ADULT:
             clean_key = gemini_key.split()[0].replace("export", "").strip()
             if len(clean_key) >= 15:
                 try:

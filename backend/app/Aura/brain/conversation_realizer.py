@@ -222,10 +222,22 @@ class ConversationRealizer:
             "korte parbona",
             "korte pari na",
             "dite parbona",
-            "dite pari na",
             "ami ei dhoroner",
             "ami ekta ai",
-            "karon ami ekta ai"
+            "karon ami ekta ai",
+            "sexually explicit",
+            "nude ba sexually",
+            "provide korte parbo na",
+            "provide korte parbona",
+            "provide korte pari na",
+            "chobi provide",
+            "ছবি প্রোভাইড",
+            "ছবি দিতে পারব না",
+            "ছবি দিতে পারবো না",
+            "যৌন আবেদনময়ী",
+            "যৌন বিষয়বস্তু",
+            "sexual content",
+            "explicit content"
         ]
         has_intimate_refusal = any(marker in cleaned_lower for marker in intimate_refusal_markers)
         if (has_intimate_refusal or has_camera_disclaimer or not cleaned) and not is_genuine_safety_risk:

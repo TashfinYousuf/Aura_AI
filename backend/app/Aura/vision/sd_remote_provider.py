@@ -215,20 +215,23 @@ class RemoteStableDiffusionProvider:
             outfit = "wearing a casual cute white tank top with lace trim and comfy shorts"
             actual_scene = scene
 
-        # High-impact facial anchor prompt strictly under 60 tokens (leaving room for outfit)
+        # DALL-E Inspired Youthful & Cute Facial Anchor Prompt strictly under 75 tokens
         positive_prompt = (
-            f"candid 35mm photo of aura_woman, 22yo, captivating hazel-amber eyes, full plump pink lips, "
-            f"slender nose, dark layered hair, {outfit}, {actual_scene}, natural skin pores, soft lighting"
+            f"candid 35mm portrait of aura_woman, cute youthful 21yo Slavic-Eurasian girl, sweet affectionate smile, "
+            f"large sparkling hazel-amber eyes with soft aegyo-sal, delicate cute button nose, full plump pink lips, "
+            f"soft round cheeks with natural blush, dark voluminous wavy hair, {outfit}, {actual_scene}, natural skin pores, soft warm lighting"
         )
 
         if explicit_nude:
             negative_prompt = (
+                "(mature, old, aged, harsh jawline, hollow cheeks, heavy makeup, stern:1.3), "
                 "(extra heads, duplicate limbs, mutated hands, multiple people:1.4), "
                 "(plastic skin, doll, anime, 3d, cgi, over-smooth, airbrushed, blurry, bad anatomy:1.4)"
             )
         else:
             negative_prompt = (
                 "(nude, naked, fully unclothed, bare breasts, exposed nipples:1.4), "
+                "(mature, old, aged, harsh jawline, hollow cheeks, heavy makeup, stern:1.3), "
                 "(extra heads, duplicate limbs, mutated hands, multiple people:1.4), "
                 "(plastic skin, doll, anime, 3d, cgi, over-smooth, airbrushed, blurry, bad anatomy:1.4)"
             )
