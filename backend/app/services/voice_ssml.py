@@ -191,8 +191,12 @@ async def render_neural_voice(text: str, mood: str = "WARM") -> Tuple[Optional[s
     1. Cleans input text completely (strips emojis, dari/comma artifacts, 'dot dot dot').
     2. Routes Bengali & Banglish to Tanishaa (bn-IN-TanishaaNeural).
     3. Routes English to Emma (en-US-EmmaNeural).
-    4. Generates streaming Edge-TTS audio and returns Base64 audio + clean spoken text.
+    4. Tier 0: Tries ElevenLabs Multilingual V2 first (studio-grade voice).
+    5. Tier 2 Fallback: Edge-TTS if ElevenLabs unavailable or fails.
+    6. Returns Base64 audio + clean spoken text.
     """
+    import os
+
     if not text:
         return None, ""
 
@@ -200,6 +204,28 @@ async def render_neural_voice(text: str, mood: str = "WARM") -> Tuple[Optional[s
     if not spoken_clean:
         return None, ""
 
+    # -----------------------------------------------------------------
+    # Tier 0: ElevenLabs Multilingual V2 (Studio-Grade Sweet Voice)
+    # -----------------------------------------------------------------
+    if os.getenv("ELEVENLABS_API_KEY"):
+        try:
+            from app.services.voice_engine import synthesize_elevenlabs_voice, generate_speech_performance_script
+            perf = generate_speech_performance_script(spoken_clean, mood=mood.upper())
+            audio_bytes = await synthesize_elevenlabs_voice(
+                script=spoken_clean,
+                stability=perf.get("el_stability", 0.48),
+                similarity_boost=0.75,
+                style=perf.get("el_style", 0.15),
+                speed=perf.get("el_speed", 0.96)
+            )
+            if audio_bytes:
+                return base64.b64encode(audio_bytes).decode("utf-8"), spoken_clean
+        except Exception as e:
+            print(f"⚠️ [ELEVENLABS VOICE FALLBACK]: {e}. Falling back to Edge-TTS...")
+
+    # -----------------------------------------------------------------
+    # Tier 2 Fallback: Edge-TTS (Zero-Cost, Ultra-Reliable)
+    # -----------------------------------------------------------------
     voice, rate, pitch = detect_voice_parameters(spoken_clean, mood)
 
     try:

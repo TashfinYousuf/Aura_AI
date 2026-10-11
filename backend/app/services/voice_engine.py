@@ -162,7 +162,7 @@ async def synthesize_elevenlabs_voice(
     if not eleven_key:
         return None
 
-    vid = voice_id or os.getenv("ELEVENLABS_VOICE_ID", "EXAVITQu4vr4xnSDxMaL")  # Sarah default
+    vid = voice_id or os.getenv("ELEVENLABS_VOICE_ID", "gJU2icYQsdEmbGJ65Z8W")  # Aura's custom sweet voice
     cache_key = hashlib.sha256(f"eleven_{script}_{vid}_{stability}_{similarity_boost}_{style}_{speed}".encode()).hexdigest()
     cached = _get_cached_audio(cache_key)
     if cached:

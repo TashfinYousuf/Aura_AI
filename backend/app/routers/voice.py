@@ -324,7 +324,7 @@ async def websocket_endpoint(websocket: WebSocket, user_id: str, token: Optional
                     "image_url": image_url
                 }))
 
-            # 8. Expressive Voice Prosody (Edge-TTS)
+            # 8. Expressive Voice Synthesis (ElevenLabs Tier 0 → Edge-TTS Fallback)
             audio_b64, _ = await render_neural_voice(turn.audio_text, mood=turn.state.conversation_mode)
 
             # 9. Final Payload Delivery

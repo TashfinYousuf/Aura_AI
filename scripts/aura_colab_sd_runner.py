@@ -119,15 +119,38 @@ def ensure_aura_lora() -> str:
     is_valid = False
     if target_path.exists() and target_path.stat().st_size > 5000000:
         try:
-            with open(target_path, "rb") as f:
-                h_len = struct.unpack("<Q", f.read(8))[0]
-                h = json.loads(f.read(h_len).decode("utf-8"))
-                if len(h) >= 256:
-                    is_valid = True
-        except Exception:
+            from safetensors.torch import load_file
+            load_file(str(target_path))
+            is_valid = True
+        except ImportError:
+            try:
+                with open(target_path, "rb") as f:
+                    h_len = struct.unpack("<Q", f.read(8))[0]
+                    h = json.loads(f.read(h_len).decode("utf-8"))
+                    tensor_keys = [k for k in h if k != "__metadata__" and "data_offsets" in h[k]]
+                    if len(tensor_keys) >= 200:
+                        offsets = [tuple(h[k]["data_offsets"]) for k in tensor_keys]
+                        offsets.sort(key=lambda x: x[0])
+                        prev_end = 0
+                        contiguous = True
+                        for start, end in offsets:
+                            if start != prev_end or end <= start:
+                                contiguous = False
+                                break
+                            prev_end = end
+                        is_valid = contiguous
+            except Exception:
+                is_valid = False
+        except Exception as e:
+            print(f"⚠️ [LORA INTEGRITY CHECK]: Cached aura_v1.safetensors is corrupted or unreadable ({e}). Re-downloading fixed version...")
             is_valid = False
 
     if not is_valid:
+        if target_path.exists():
+            try:
+                target_path.unlink()
+            except Exception:
+                pass
         url = "https://raw.githubusercontent.com/TashfinYousuf/Aura_AI/main/backend/app/static/models/aura_v1.safetensors"
         try:
             print(f"📥 [DOWNLOADING AURA LORA]: Fetching verified multi-format LoRA from GitHub...")
