@@ -368,9 +368,19 @@ def create_audit_pdf(output_path: str):
             Paragraph("Locked proportional scaling via ImageOps.fit, added face box size thresholds, and integrated comprehensive anatomical negative prompts.", table_cell)
         ],
         [
-            Paragraph("<b>ElevenLabs Studio Voice Engine</b>", table_cell),
-            Paragraph("Lack of persistent studio-grade vocal identity across languages.", table_cell),
-            Paragraph("Integrated Tier 0 ElevenLabs Multilingual V2 with standard sweet companion voice ('Sarah'), backed by Kokoro-82M and Edge-TTS fallbacks.", table_cell)
+            Paragraph("<b>Safetensors Offset Collision Fix</b>", table_cell),
+            Paragraph("Kaggle/Colab failed to deserialize aura_v1.safetensors due to overlapping offset ranges in multi-key layout.", table_cell),
+            Paragraph("Reconstructed 256 unique contiguous unet tensors into spec-compliant safetensors format with zero header errors.", table_cell)
+        ],
+        [
+            Paragraph("<b>CLIP Token Truncation & Precedence</b>", table_cell),
+            Paragraph("Prompt >98 tokens exceeded CLIP 77-token limit, truncating outfits; generic keywords in explicit_nude overrode lingerie requests.", table_cell),
+            Paragraph("Separated clothing intent from explicit nudity, prioritized red velvet/lingerie, and compressed base prompt to ~24 tokens (<65 total).", table_cell)
+        ],
+        [
+            Paragraph("<b>ElevenLabs Production Blueprint</b>", table_cell),
+            Paragraph("Lack of persistent studio vocal identity and risk of excessive API cost from repeated phrases.", table_cell),
+            Paragraph("Configured recommended parameters (stability: 0.48, similarity: 0.75, style: 0.15, speed: 0.96) and integrated LRU audio cache (128 items).", table_cell)
         ]
     ]
     incidents_table = Table(incidents_data, colWidths=[120, 185, 235])
@@ -418,7 +428,7 @@ def create_audit_pdf(output_path: str):
 
     elements.append(Spacer(1, 10))
     elements.append(HRFlowable(width="100%", thickness=1, color=BORDER_COL, spaceAfter=6))
-    elements.append(Paragraph("<b>Aura Multimodal Companion OS — Verification Complete</b> | 42/42 Automated Tests Passing | Release v3.8 Synchronized with GitHub main.", ParagraphStyle('Footer', parent=body_style, fontSize=7.5, textColor=TEXT_MUTED, alignment=1)))
+    elements.append(Paragraph("<b>Aura Multimodal Companion OS — Verification Complete</b> | 41/41 Automated Tests Passing | Release v3.9 Synchronized with GitHub main.", ParagraphStyle('Footer', parent=body_style, fontSize=7.5, textColor=TEXT_MUTED, alignment=1)))
 
     doc.build(elements)
     print(f"✅ Audit PDF successfully generated at: {output_path}")

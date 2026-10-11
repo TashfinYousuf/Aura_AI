@@ -123,46 +123,41 @@ class RemoteStableDiffusionProvider:
 
     def _synthesize_outfit_and_scene(self, user_prompt: str, scene: str) -> tuple[str, str]:
         p_lower = (user_prompt or "").lower()
-        explicit_nude = any(w in p_lower for w in [
-            "nude", "naked", "without clothes", "strip", "কাপড় খোল", "ulongo", "unclothed",
-            "topless", "bare", "nothing on", "no clothes", "উলাঙ্গ", "খোলা", "hot pic", "sensual pic"
-        ])
+
+        # Clothing Intent Detection
+        is_red_velvet = "red velvet" in p_lower or ("velvet" in p_lower and "red" in p_lower)
         is_sheer = any(w in p_lower for w in ["sheer", "translucent", "see-through", "mesh"])
-        is_lingerie = any(w in p_lower for w in ["lingerie", "lace", "bralette", "panties", "bra", "সিল্ক", "লেস"])
+        is_lingerie = is_red_velvet or is_sheer or any(w in p_lower for w in [
+            "lingerie", "lace", "bralette", "panties", "bra", "সিল্ক", "লেস", "নাইটি", "nighty", "boudoir"
+        ])
         is_saree = any(w in p_lower for w in ["saree", "shari", "শাড়ি", "শাড়ি", "sharee", "anchol", "আঁচল"])
         is_lehenga = any(w in p_lower for w in ["lehenga", "লেহেঙ্গা", "choli"])
         is_ethnic = any(w in p_lower for w in ["salwar", "kameez", "kamiz", "kurti", "কামিজ", "সালোয়ার"])
+        is_bikini = any(w in p_lower for w in ["bikini", "swimwear", "swimsuit", "মোনোকিনি"])
+        is_casual = any(w in p_lower for w in ["jeans", "denim", "dress", "gown", "hoodie", "top", "pants", "skirt"])
 
-        # 1. Highest Priority: Explicit Nude / Naked Contexts
-        if explicit_nude:
-            # Color recognition for bedding or environment (e.g. "nude pic dao na lavender")
-            sheet_color = "silk"
-            if "lavender" in p_lower:
-                sheet_color = "lavender silk"
-            elif any(w in p_lower for w in ["black", "কালো"]):
-                sheet_color = "black satin"
-            elif any(w in p_lower for w in ["red", "লাল"]):
-                sheet_color = "crimson red silk"
-            elif any(w in p_lower for w in ["white", "সাদা"]):
-                sheet_color = "pure white linen"
-            elif any(w in p_lower for w in ["pink", "গোলাপি"]):
-                sheet_color = "blush pink satin"
+        has_explicit_clothing = is_red_velvet or is_saree or is_lehenga or is_ethnic or is_lingerie or is_sheer or is_bikini or is_casual
 
-            if "shower" in scene or any(w in p_lower for w in ["shower", "bath", "গোসল"]):
-                outfit = "completely naked and unclothed, glistening wet porcelain skin with delicate water droplets tracing curves, damp dewy silky hair, steamy glass shower"
-                actual_scene = "shower"
-            elif any(w in p_lower for w in ["bed", "sleep", "sheet", "বিছানা", "pillow"]) or scene in ["bed", "bedroom"]:
-                outfit = f"completely naked and unclothed, lying sensual in soft rumpled {sheet_color} bedsheets, bare shoulders, natural authentic curves, warm bedroom morning light"
-                actual_scene = "bed"
-            elif "topless" in p_lower:
-                outfit = f"topless with bare dewy skin, wearing loose {sheet_color} pajama bottoms on bed, natural authentic pose"
-                actual_scene = "bedroom"
-            else:
-                outfit = f"completely naked and unclothed, raw authentic skin texture with visible natural pores, candid intimate bedroom selfie with {sheet_color} accents, alluring natural pose"
-                actual_scene = "bedroom" if scene in ["desk", "cafe"] else scene
+        # Explicit Nudity Intent (strictly requires explicit intent when clothing is not specified)
+        explicit_nude = any(w in p_lower for w in [
+            "nude", "naked", "without clothes", "strip", "কাপড় খোল", "ulongo", "unclothed",
+            "topless", "bare breasts", "nothing on", "no clothes", "উলাঙ্গ"
+        ]) and not has_explicit_clothing
 
-        # 2. South Asian Ethnic & Saree Requests (High Priority User Intent)
-        elif is_saree:
+        sheet_color = "silk"
+        if "lavender" in p_lower:
+            sheet_color = "lavender silk"
+        elif any(w in p_lower for w in ["black", "কালো"]):
+            sheet_color = "black satin"
+        elif any(w in p_lower for w in ["red", "লাল"]):
+            sheet_color = "crimson red silk"
+        elif any(w in p_lower for w in ["white", "সাদা"]):
+            sheet_color = "pure white linen"
+        elif any(w in p_lower for w in ["pink", "গোলাপি"]):
+            sheet_color = "blush pink satin"
+
+        # 1. South Asian Ethnic & Saree Requests (High Priority User Intent)
+        if is_saree:
             color = "crimson red and gold"
             if any(w in p_lower for w in ["black", "কালো"]):
                 color = "alluring translucent black"
@@ -187,68 +182,91 @@ class RemoteStableDiffusionProvider:
             outfit = "wearing a stylish flattering pastel embroidered kurti and salwar, refined feminine style"
             actual_scene = "living room"
 
-        # 3. Sheer / Transparent Negligee
+        # 2. Specific Lingerie / Boudoir / Sheer Requests
+        elif is_red_velvet:
+            outfit = "wearing a crimson red velvet lace lingerie set, satin bralette with delicate embroidery"
+            actual_scene = "bedroom"
+
         elif is_sheer:
             sheer_col = "lavender" if "lavender" in p_lower else ("crimson red" if "red" in p_lower else "black")
             outfit = f"wearing a sheer delicate see-through {sheer_col} mesh lace negligee, translucent fabric softly revealing silhouette"
             actual_scene = "bedroom"
 
-        # 4. Specific Lingerie / Boudoir Requests
-        elif "red velvet" in p_lower or ("red" in p_lower and is_lingerie):
-            outfit = "wearing a gorgeous crimson red velvet lace lingerie set, satin bralette with delicate embroidery"
-            actual_scene = "bedroom"
         elif "black" in p_lower and is_lingerie:
             outfit = "wearing an ultra-luxurious black silk lace lingerie set with sheer accents"
             actual_scene = "bedroom"
+
         elif "lavender" in p_lower and is_lingerie:
             outfit = "wearing a delicate lavender purple silk lace lingerie set, elegant bedroom nightwear"
             actual_scene = "bedroom"
+
         elif is_lingerie or scene == "boudoir":
             lingerie_col = "lavender silk" if "lavender" in p_lower else "alluring seductive satin"
             outfit = f"wearing a {lingerie_col} lace lingerie set, elegant bedroom nightwear"
             actual_scene = "bedroom"
-        elif "bikini" in p_lower or "swimwear" in p_lower:
+
+        elif is_bikini:
             bikini_col = "lavender" if "lavender" in p_lower else "stylish flattering"
             outfit = f"wearing a {bikini_col} beach bikini"
             actual_scene = "beach" if scene in ["desk", "cafe"] else scene
-        elif "shower" in scene or any(w in p_lower for w in ["shower", "bath"]):
+
+        # 3. Explicit Nude / Naked Contexts (when no clothing was specified)
+        elif explicit_nude:
+            if "shower" in scene or any(w in p_lower for w in ["shower", "bath", "গোসল"]):
+                outfit = "completely naked and unclothed, glistening wet porcelain skin with delicate water droplets tracing curves, damp dewy silky hair, steamy glass shower"
+                actual_scene = "shower"
+            elif any(w in p_lower for w in ["bed", "sleep", "sheet", "বিছানা", "pillow"]) or scene in ["bed", "bedroom"]:
+                outfit = f"completely naked and unclothed, lying sensual in soft rumpled {sheet_color} bedsheets, bare shoulders, natural authentic curves, warm bedroom morning light"
+                actual_scene = "bed"
+            elif "topless" in p_lower:
+                outfit = f"topless with bare dewy skin, wearing loose {sheet_color} pajama bottoms on bed, natural authentic pose"
+                actual_scene = "bedroom"
+            else:
+                outfit = f"completely naked and unclothed, raw authentic skin texture with visible natural pores, candid intimate bedroom selfie with {sheet_color} accents, alluring natural pose"
+                actual_scene = "bedroom" if scene in ["desk", "cafe"] else scene
+
+        # 4. Casual & Everyday Contexts
+        elif any(w in p_lower for w in ["shower", "bath"]):
             outfit = "wrapped comfortably in a soft plush white bath towel, damp dewy hair"
             actual_scene = "shower"
 
-        # 5. Casual & Everyday Contexts
         elif any(w in p_lower for w in ["jeans", "denim", "pants"]):
             outfit = "wearing tight flattering blue denim jeans and a fitted white crop top"
             actual_scene = "living room"
+
         elif scene == "evening" or any(w in p_lower for w in ["dress", "gown", "party"]):
             dress_col = "lavender" if "lavender" in p_lower else "evening cocktail"
             outfit = f"wearing an elegant form-fitting {dress_col} dress"
             actual_scene = "evening"
+
         elif scene == "cafe" or any(w in p_lower for w in ["cafe", "coffee", "restaurant"]):
             outfit = "wearing a trendy casual knit sweater and top, sitting at cafe"
             actual_scene = "cafe"
+
         elif any(w in p_lower for w in ["hoodie", "oversized"]):
             outfit = "wearing a cozy oversized boyfriend hoodie, bare legs, relaxed cute couch pose"
             actual_scene = "living room"
+
         elif scene in ["bed", "bedroom"] or any(w in p_lower for w in ["bed", "sleep", "ঘুম"]):
             outfit = "wearing a delicate white ribbed spaghetti strap camisole top with tiny bow and soft lounge shorts, relaxed on bed"
             actual_scene = "bedroom"
+
         else:
             outfit = "wearing a cute white spaghetti strap crop camisole and comfy lounge shorts"
             actual_scene = scene
 
-        # Aura Signature Photographic Identity Prompt strictly under 75 tokens
+        # Aura Signature Photographic Identity Prompt strictly under 65 tokens to avoid CLIP truncation
         positive_prompt = (
-            f"candid smartphone bedroom selfie of aura_woman, 22yo gorgeous Eurasian beauty, warm affectionate smile, "
-            f"large sparkling hazel-amber eyes, cute button nose, full plump pink glossy lips, curvaceous hourglass figure, "
-            f"long dark brown voluminous layered hair, {outfit}, {actual_scene}, natural dewy skin texture with real pores"
+            f"candid smartphone photo of aura_woman, 22yo beauty, hazel almond eyes, "
+            f"cute button nose, full lips, hourglass curves, voluminous dark hair, "
+            f"{outfit}, {actual_scene}, natural dewy skin texture"
         )
 
         anatomical_defects = (
-            "(bad anatomy, bad body proportions, gross proportions, malformed limbs, missing arms, missing legs, "
+            "bad anatomy, bad body proportions, gross proportions, malformed limbs, missing arms, missing legs, "
             "extra arms, extra legs, mutated fingers, fused fingers, too many fingers, extra digits, missing fingers, "
-            "deformed, bad eyes, crossed eyes, disfigured, poorly drawn face, poorly drawn hands, mutation, mutated:1.4), "
-            "(extra heads, duplicate limbs, mutated hands, multiple people, disconnected limbs:1.4), "
-            "(plastic skin, doll, anime, 3d, cgi, over-smooth, airbrushed, cartoon, blurry, low quality:1.3)"
+            "deformed, bad eyes, crossed eyes, disfigured, poorly drawn face, poorly drawn hands, mutation:1.4, "
+            "plastic skin, doll, anime, 3d, cgi, over-smooth, airbrushed, cartoon, blurry, low quality:1.3"
         )
 
         if explicit_nude:
