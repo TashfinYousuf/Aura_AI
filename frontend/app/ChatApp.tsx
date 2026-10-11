@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import axios from "axios";
 import { signOut, User } from "firebase/auth";
 import { auth } from "./firebase";
@@ -9,9 +9,32 @@ import GoalTracker from "./GoalTracker";
 import { MessageList, Message } from "./components/MessageList";
 import { Composer } from "./components/Composer";
 import { CompanionPanel } from "./components/CompanionPanel";
+import { 
+  Pin, X, Search, Palette, ChevronUp, ChevronDown, Check, 
+  Download, Bookmark, Sparkles, CheckCheck 
+} from "lucide-react";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || (typeof window !== "undefined" ? `http://${window.location.hostname}:8000` : "http://127.0.0.1:8000");
 const WS_BASE = process.env.NEXT_PUBLIC_WS_URL || (typeof window !== "undefined" ? `ws://${window.location.hostname}:8000` : "ws://127.0.0.1:8000");
+
+export type ChatThemeKey = "midnight" | "telegram" | "rose" | "emerald" | "cyberpunk" | "custom";
+
+export interface ThemeConfig {
+  key: ChatThemeKey;
+  name: string;
+  bgClass: string;
+  accent: string;
+  previewColor: string;
+}
+
+export const THEME_PRESETS: ThemeConfig[] = [
+  { key: "midnight", name: "Midnight Velvet", bgClass: "bg-[#090a10]", accent: "#6366f1", previewColor: "#1e1b4b" },
+  { key: "telegram", name: "Telegram Dark", bgClass: "bg-[#0e1621]", accent: "#5288c1", previewColor: "#17212b" },
+  { key: "rose", name: "Romantic Rose", bgClass: "bg-[#130712]", accent: "#f43f5e", previewColor: "#381028" },
+  { key: "emerald", name: "Emerald Slate", bgClass: "bg-[#06140f]", accent: "#10b981", previewColor: "#0f2e21" },
+  { key: "cyberpunk", name: "Cyberpunk Neon", bgClass: "bg-[#070914]", accent: "#a855f7", previewColor: "#22143b" },
+  { key: "custom", name: "Custom Wallpaper", bgClass: "bg-gray-950", accent: "#8b5cf6", previewColor: "#312e81" }
+];
 
 export default function ChatApp({ currentUser }: { currentUser: User }) {
   const [messages, setMessages] = useState<Message[]>([
@@ -38,6 +61,16 @@ export default function ChatApp({ currentUser }: { currentUser: User }) {
   const [editingMsgIdx, setEditingMsgIdx] = useState<number | null>(null);
   const [viewingImage, setViewingImage] = useState<string | null>(null);
 
+  // New Telegram + Messenger Hybrid Features
+  const [pinnedMessageId, setPinnedMessageId] = useState<string | null>(null);
+  const [isSearching, setIsSearching] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchMatchIdx, setSearchMatchIdx] = useState(0);
+  const [showThemeModal, setShowThemeModal] = useState(false);
+  const [chatTheme, setChatTheme] = useState<ChatThemeKey>("midnight");
+  const [customWallpaper, setCustomWallpaper] = useState("");
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const ws = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -45,6 +78,27 @@ export default function ChatApp({ currentUser }: { currentUser: User }) {
   const activeMediaStream = useRef<MediaStream | null>(null);
   const audioChunks = useRef<Blob[]>([]);
   const recordingStartTime = useRef<number>(0);
+  const toastTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Load Persisted Local Preferences
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const savedTheme = localStorage.getItem("aura_chat_theme") as ChatThemeKey;
+      if (savedTheme) setChatTheme(savedTheme);
+      const savedWall = localStorage.getItem("aura_custom_wallpaper");
+      if (savedWall) setCustomWallpaper(savedWall);
+      const savedPin = localStorage.getItem("aura_pinned_msg_id");
+      if (savedPin) setPinnedMessageId(savedPin);
+    }
+  }, []);
+
+  const showToast = useCallback((text: string) => {
+    if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
+    setToastMessage(text);
+    toastTimeoutRef.current = setTimeout(() => {
+      setToastMessage(null);
+    }, 2500);
+  }, []);
 
   useEffect(() => {
     if ("Notification" in window && Notification.permission !== "granted") {
@@ -53,8 +107,10 @@ export default function ChatApp({ currentUser }: { currentUser: User }) {
   }, []);
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, streamingText]);
+    if (!isSearching) {
+      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [messages, streamingText, isSearching]);
 
   // Load Previous Chat History
   const loadChatHistory = useCallback(async () => {
@@ -176,7 +232,6 @@ export default function ChatApp({ currentUser }: { currentUser: User }) {
             setActionStatus(null);
             setIsLoading(false);
 
-            // Trigger browser notification if user is on another tab/window
             if (typeof document !== "undefined" && document.hidden && "Notification" in window && Notification.permission === "granted") {
               try {
                 new Notification("Aura 💜", {
@@ -299,7 +354,6 @@ export default function ChatApp({ currentUser }: { currentUser: User }) {
         mediaRecorder.current.onstop = () => {
           const duration = Date.now() - recordingStartTime.current;
 
-          // Release hardware mic track immediately
           if (activeMediaStream.current) {
             activeMediaStream.current.getTracks().forEach((track) => track.stop());
             activeMediaStream.current = null;
@@ -324,7 +378,8 @@ export default function ChatApp({ currentUser }: { currentUser: User }) {
                 role: 'user',
                 content: "🎤 Voice Message",
                 isVoiceNote: true,
-                userAudioUrl: userAudioObjectUrl
+                userAudioUrl: userAudioObjectUrl,
+                timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
               }
             ]);
             setIsLoading(true);
@@ -354,6 +409,9 @@ export default function ChatApp({ currentUser }: { currentUser: User }) {
     try {
       await axios.delete(`${API_BASE}/api/chat/history/${currentUser.uid}`);
       setMessages([]);
+      setPinnedMessageId(null);
+      localStorage.removeItem("aura_pinned_msg_id");
+      showToast("Conversation cleared");
     } catch (err) {
       console.error("Failed to delete history:", err);
     }
@@ -380,11 +438,12 @@ export default function ChatApp({ currentUser }: { currentUser: User }) {
     const msgId = messages[idx].id;
     setMessages((prev) => {
       const copy = [...prev];
-      copy[idx] = { ...copy[idx], content: newContent };
+      copy[idx] = { ...copy[idx], content: newContent, isEdited: true };
       return copy;
     });
     setEditingMsgIdx(null);
     setInput("");
+    showToast("Message updated! ✏️");
 
     if (ws.current && ws.current.readyState === WebSocket.OPEN) {
       ws.current.send(JSON.stringify({ type: "edit", message_id: msgId, new_content: newContent }));
@@ -392,21 +451,111 @@ export default function ChatApp({ currentUser }: { currentUser: User }) {
   };
 
   const handleUnsend = async (msgId: string, everyone: boolean) => {
-    // 1. Remove immediately from local state
     setMessages((prev) => prev.filter((m) => m.id !== msgId));
+    if (pinnedMessageId === msgId) {
+      setPinnedMessageId(null);
+      localStorage.removeItem("aura_pinned_msg_id");
+    }
+    showToast(everyone ? "Unsent for everyone 🗑️" : "Deleted for you");
 
     if (everyone) {
-      // 2. Broadcast via WebSocket
       if (ws.current && ws.current.readyState === WebSocket.OPEN) {
         ws.current.send(JSON.stringify({ type: "unsend", message_id: msgId }));
       }
-      // 3. Resilient fallback via REST
       try {
         await axios.delete(`${API_BASE}/api/chat/message/${currentUser.uid}/${msgId}`);
       } catch (err) {
         console.warn("Unsend REST sync notice:", err);
       }
     }
+  };
+
+  // Pin & Unpin Handler
+  const handlePinMessage = (msgId: string) => {
+    if (pinnedMessageId === msgId) {
+      setPinnedMessageId(null);
+      localStorage.removeItem("aura_pinned_msg_id");
+      showToast("Message unpinned");
+    } else {
+      setPinnedMessageId(msgId);
+      localStorage.setItem("aura_pinned_msg_id", msgId);
+      showToast("Message pinned to top 📌");
+    }
+  };
+
+  // Save / Bookmark Handler
+  const handleSaveMessage = (msgId: string) => {
+    setMessages((prev) =>
+      prev.map((m) => {
+        if (m.id === msgId) {
+          const nextSaved = !m.isSaved;
+          showToast(nextSaved ? "Message bookmarked 🔖" : "Bookmark removed");
+          return { ...m, isSaved: nextSaved };
+        }
+        return m;
+      })
+    );
+  };
+
+  // Export Chat History Handler (.txt download)
+  const handleExportChat = () => {
+    if (messages.length === 0) {
+      showToast("No messages to export");
+      return;
+    }
+    const dateStr = new Date().toISOString().split("T")[0];
+    let exportText = `==================================================\n`;
+    exportText += `AURA AI — CONVERSATION EXPORT\n`;
+    exportText += `Export Timestamp: ${new Date().toLocaleString()}\n`;
+    exportText += `Participant: ${currentUser.email || currentUser.uid}\n`;
+    exportText += `Total Messages: ${messages.length}\n`;
+    exportText += `==================================================\n\n`;
+
+    messages.forEach((m) => {
+      const sender = m.role === "ai" ? "Aura 💜" : "You 👤";
+      const time = m.timestamp ? `[${m.timestamp}] ` : "";
+      exportText += `${time}${sender}:\n${m.content}\n`;
+      if (m.imageUrl) exportText += `[Media Attachment: ${m.imageUrl}]\n`;
+      if (m.reaction) exportText += `[Reaction: ${m.reaction}]\n`;
+      exportText += `--------------------------------------------------\n\n`;
+    });
+
+    const blob = new Blob([exportText], { type: "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `Aura_Chat_Export_${dateStr}.txt`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    showToast("Chat history exported (.txt) 📥");
+  };
+
+  // Inline Search Filter
+  const searchMatches = useMemo(() => {
+    if (!searchQuery.trim()) return [];
+    return messages.filter((m) =>
+      m.content.toLowerCase().includes(searchQuery.toLowerCase())
+    );
+  }, [messages, searchQuery]);
+
+  const activeMatch = searchMatches[searchMatchIdx] || null;
+
+  const handleNextSearchMatch = () => {
+    if (searchMatches.length === 0) return;
+    const nextIdx = (searchMatchIdx + 1) % searchMatches.length;
+    setSearchMatchIdx(nextIdx);
+    const target = document.getElementById(`msg-${searchMatches[nextIdx].id}`);
+    target?.scrollIntoView({ behavior: "smooth", block: "center" });
+  };
+
+  const handlePrevSearchMatch = () => {
+    if (searchMatches.length === 0) return;
+    const prevIdx = (searchMatchIdx - 1 + searchMatches.length) % searchMatches.length;
+    setSearchMatchIdx(prevIdx);
+    const target = document.getElementById(`msg-${searchMatches[prevIdx].id}`);
+    target?.scrollIntoView({ behavior: "smooth", block: "center" });
   };
 
   const resolveImageUrl = (url?: string | null) => {
@@ -417,8 +566,22 @@ export default function ChatApp({ currentUser }: { currentUser: User }) {
     return `${API_BASE}${url.startsWith("/") ? "" : "/"}${url}`;
   };
 
+  const pinnedMsg = messages.find((m) => m.id === pinnedMessageId);
+  const activeThemeObj = THEME_PRESETS.find((t) => t.key === chatTheme) || THEME_PRESETS[0];
+
   return (
-    <div className="flex flex-col h-dvh w-full bg-gray-950 overflow-hidden">
+    <div 
+      className={`flex flex-col h-dvh w-full ${activeThemeObj.bgClass} overflow-hidden transition-colors duration-300 relative`}
+      style={
+        chatTheme === "custom" && customWallpaper
+          ? {
+              backgroundImage: customWallpaper.startsWith("http") ? `url(${customWallpaper})` : customWallpaper,
+              backgroundSize: "cover",
+              backgroundPosition: "center"
+            }
+          : undefined
+      }
+    >
       {/* 1. Header Toolbar & Companion Panel */}
       <CompanionPanel
         relationship={relationship}
@@ -432,17 +595,124 @@ export default function ChatApp({ currentUser }: { currentUser: User }) {
         setShowDashboard={setShowDashboard}
         onClearChat={() => setShowClearConfirm(true)}
         onSignOut={() => signOut(auth)}
+        onOpenSearch={() => {
+          setIsSearching(true);
+          setSearchQuery("");
+        }}
+        onOpenThemeModal={() => setShowThemeModal(true)}
+        onExportChat={handleExportChat}
       />
+
+      {/* Telegram-style Pinned Message Banner */}
+      {pinnedMsg && (
+        <div 
+          onClick={() => {
+            const target = document.getElementById(`msg-${pinnedMsg.id}`);
+            if (target) {
+              target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+              target.classList.add('ring-2', 'ring-indigo-400', 'ring-offset-2', 'ring-offset-gray-950');
+              setTimeout(() => {
+                target.classList.remove('ring-2', 'ring-indigo-400', 'ring-offset-2', 'ring-offset-gray-950');
+              }, 2000);
+            }
+          }}
+          className="bg-gray-900/90 backdrop-blur-md border-b border-indigo-500/30 px-4 py-2 flex items-center justify-between text-xs cursor-pointer hover:bg-gray-850 transition z-20 shadow-sm"
+        >
+          <div className="flex items-center gap-2 overflow-hidden">
+            <Pin className="w-3.5 h-3.5 text-indigo-400 shrink-0 fill-indigo-400/30" />
+            <span className="font-semibold text-indigo-300 shrink-0">Pinned Message:</span>
+            <span className="text-gray-300 truncate max-w-sm sm:max-w-md">{pinnedMsg.content || "Media"}</span>
+          </div>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              handlePinMessage(pinnedMsg.id);
+            }}
+            className="text-gray-400 hover:text-white p-1 rounded hover:bg-gray-800 transition"
+            title="Unpin message"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
+
+      {/* Telegram-style Inline Search Banner */}
+      {isSearching && (
+        <div className="bg-gray-900/95 backdrop-blur-md border-b border-gray-800 px-4 py-2 flex items-center justify-between gap-3 text-xs z-20 shadow-md animate-in slide-in-from-top duration-200">
+          <div className="flex items-center gap-2 flex-1 max-w-md bg-gray-950 px-3 py-1.5 rounded-xl border border-gray-700 focus-within:border-indigo-500">
+            <Search className="w-4 h-4 text-gray-400" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => {
+                setSearchQuery(e.target.value);
+                setSearchMatchIdx(0);
+              }}
+              placeholder="Search conversation..."
+              className="bg-transparent text-white outline-none w-full text-xs placeholder-gray-500"
+              autoFocus
+            />
+            {searchQuery && (
+              <button onClick={() => setSearchQuery("")} className="text-gray-500 hover:text-gray-300">
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-gray-400 text-[11px] whitespace-nowrap">
+              {searchMatches.length > 0
+                ? `${searchMatchIdx + 1} of ${searchMatches.length}`
+                : searchQuery
+                ? "No matches"
+                : ""}
+            </span>
+            <button
+              onClick={handlePrevSearchMatch}
+              disabled={searchMatches.length === 0}
+              className="p-1 rounded hover:bg-gray-800 text-gray-300 disabled:opacity-30 transition"
+              title="Previous match"
+            >
+              <ChevronUp className="w-4 h-4" />
+            </button>
+            <button
+              onClick={handleNextSearchMatch}
+              disabled={searchMatches.length === 0}
+              className="p-1 rounded hover:bg-gray-800 text-gray-300 disabled:opacity-30 transition"
+              title="Next match"
+            >
+              <ChevronDown className="w-4 h-4" />
+            </button>
+            <button
+              onClick={() => {
+                setIsSearching(false);
+                setSearchQuery("");
+              }}
+              className="p-1 rounded hover:bg-gray-800 text-gray-400 hover:text-white ml-1 transition"
+              title="Close search"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Transient Action Toast Feedback */}
+      {toastMessage && (
+        <div className="fixed top-16 left-1/2 -translate-x-1/2 z-50 bg-gray-900/95 border border-indigo-500/40 text-white px-4 py-2 rounded-full shadow-2xl text-xs flex items-center gap-2 backdrop-blur-md animate-in fade-in slide-in-from-top-4 duration-200">
+          <Sparkles className="w-3.5 h-3.5 text-indigo-400" />
+          <span>{toastMessage}</span>
+        </div>
+      )}
 
       {/* Analytics Drawers */}
       {showDashboard && (
-        <div className="px-4 pt-4 border-b border-gray-800 bg-gray-900/30">
+        <div className="px-4 pt-4 border-b border-gray-800 bg-gray-900/40 backdrop-blur-md">
           <MoodDashboard currentUser={currentUser} />
           <GoalTracker currentUser={currentUser} />
         </div>
       )}
 
-      {/* 2. Message History & Streaming Area */}
+      {/* 2. Message History & Streaming Area (Telegram + Messenger Hybrid) */}
       <MessageList
         messages={messages}
         streamingText={streamingText}
@@ -458,9 +728,15 @@ export default function ChatApp({ currentUser }: { currentUser: User }) {
         setReplyingToMsg={setReplyingToMsg}
         submitEdit={submitEdit}
         onUnsend={handleUnsend}
+        onPinMessage={handlePinMessage}
+        onSaveMessage={handleSaveMessage}
+        pinnedMessageId={pinnedMessageId}
         setViewingImage={setViewingImage}
         resolveImageUrl={resolveImageUrl}
         messagesEndRef={messagesEndRef}
+        searchQuery={searchQuery}
+        activeMatchId={activeMatch?.id}
+        onShowToast={showToast}
       />
 
       {/* 3. Composer & Input Bar */}
@@ -476,6 +752,94 @@ export default function ChatApp({ currentUser }: { currentUser: User }) {
         replyingToMsg={replyingToMsg}
         setReplyingToMsg={setReplyingToMsg}
       />
+
+      {/* Theme & Wallpaper Customizer Modal */}
+      {showThemeModal && (
+        <div className="fixed inset-0 bg-black/75 backdrop-blur-md flex items-center justify-center z-50 animate-in fade-in p-4">
+          <div className="bg-gray-900 border border-gray-700/80 p-6 rounded-3xl max-w-md w-full shadow-2xl">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <Palette className="w-5 h-5 text-pink-400" />
+                <h3 className="text-lg font-bold text-white">Chat Themes & Wallpaper</h3>
+              </div>
+              <button
+                onClick={() => setShowThemeModal(false)}
+                className="text-gray-400 hover:text-white p-1 rounded-full hover:bg-gray-800 transition"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <p className="text-xs text-gray-400 mb-4">
+              Select a visual aesthetic inspired by Telegram and modern messenger apps:
+            </p>
+
+            {/* Presets Grid */}
+            <div className="grid grid-cols-2 gap-3 mb-5">
+              {THEME_PRESETS.filter(t => t.key !== "custom").map((t) => (
+                <button
+                  key={t.key}
+                  onClick={() => {
+                    setChatTheme(t.key);
+                    localStorage.setItem("aura_chat_theme", t.key);
+                    showToast(`Theme changed to ${t.name}`);
+                  }}
+                  className={`p-3 rounded-2xl border text-left flex items-center gap-3 transition-all ${
+                    chatTheme === t.key
+                      ? "border-indigo-500 bg-indigo-950/40 shadow-md"
+                      : "border-gray-800 bg-gray-950 hover:border-gray-700"
+                  }`}
+                >
+                  <div 
+                    className="w-5 h-5 rounded-full border border-white/20 shrink-0" 
+                    style={{ backgroundColor: t.accent }}
+                  />
+                  <span className="text-xs font-medium text-gray-200">{t.name}</span>
+                </button>
+              ))}
+            </div>
+
+            {/* Custom Wallpaper URL */}
+            <div className="border-t border-gray-800 pt-4">
+              <label className="block text-xs font-semibold text-gray-300 mb-1.5">
+                Custom Wallpaper URL (Unsplash or Image Link):
+              </label>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={customWallpaper}
+                  onChange={(e) => setCustomWallpaper(e.target.value)}
+                  placeholder="https://images.unsplash.com/..."
+                  className="flex-1 bg-gray-950 border border-gray-700 rounded-xl px-3 py-2 text-xs text-white placeholder-gray-500 outline-none focus:border-indigo-500"
+                />
+                <button
+                  onClick={() => {
+                    if (customWallpaper.trim()) {
+                      setChatTheme("custom");
+                      localStorage.setItem("aura_chat_theme", "custom");
+                      localStorage.setItem("aura_custom_wallpaper", customWallpaper.trim());
+                      showToast("Custom wallpaper applied! 🎨");
+                      setShowThemeModal(false);
+                    }
+                  }}
+                  className="px-3 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-medium transition"
+                >
+                  Apply
+                </button>
+              </div>
+            </div>
+
+            <div className="mt-6 flex justify-end">
+              <button
+                onClick={() => setShowThemeModal(false)}
+                className="px-4 py-2 bg-gray-800 hover:bg-gray-700 text-white rounded-xl text-xs transition"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Clear Chat Confirmation Modal */}
       {showClearConfirm && (
@@ -503,7 +867,6 @@ export default function ChatApp({ currentUser }: { currentUser: User }) {
 
       {/* Media Gallery Section */}
       {showMediaGallery && (() => {
-        // Merge API gallery items with any unsaved current messages
         const seenUrls = new Set<string>();
         const combined: any[] = [];
         
@@ -515,7 +878,6 @@ export default function ChatApp({ currentUser }: { currentUser: User }) {
           }
         });
 
-        // Add any recent active messages if not already in galleryItems
         messages.filter(m => m.imageUrl || m.isVoiceNote).reverse().forEach(m => {
           const key = m.imageUrl || m.audioBase64 || m.id;
           if (key && !seenUrls.has(key)) {
@@ -552,7 +914,6 @@ export default function ChatApp({ currentUser }: { currentUser: User }) {
               </div>
 
               <div className="flex items-center gap-2">
-                {/* Filter Pills */}
                 <div className="flex bg-gray-900 border border-gray-800 rounded-lg p-1 text-xs">
                   <button
                     onClick={() => setGalleryFilter('all')}

@@ -118,7 +118,7 @@ Context: {memory_ctx if memory_ctx else "None"}
 
 COMMUNICATION PRINCIPLES (AURA CANON):
 1. {lang_instruction}
-   - If Banglish: Reply in natural, smooth, शुद्ध phonetic Banglish (English alphabet). NEVER use Bengali script characters, literal machine translations, or broken Hindi words!
+   - If Banglish: Reply in natural, smooth, everyday Banglish (English alphabet) that couples text in Bangladesh. NEVER use Bengali script characters, literal machine translations, or broken Hindi words! Keep it clear, sweet, and simple (e.g. 'Ei to bashay ashlam, tumi kemon acho?').
    - If Bengali: Reply in pure, sweet, modern conversational Bengali script (চলিত ও ঘরোয়া সাবলীল বাংলা).
    - If English: Reply in casual, sweet, modern texting English.
 2. PRONOUN LOCK: In Bengali/Banglish, use ONLY 'tumi'/'tomar' ('তুমি'/'তোমার'). Never use 'tui' or 'apni'.
@@ -139,7 +139,10 @@ COMMUNICATION PRINCIPLES (AURA CANON):
 7. CADENCE: Speak naturally, warmly, playfully, and maturely in real human messaging flow (1-2 sentences). Do NOT output JSON! Talk directly to him."""
 
         messages = [{"role": "system", "content": system_prompt}]
-        messages.extend(conversation_history[-4:])
+        for h_turn in conversation_history[-4:]:
+            h_clean = re.sub(r'\[Photo Sent:\s*[^\]]+\]', '', h_turn.get("content", "")).strip()
+            if h_clean:
+                messages.append({"role": h_turn.get("role", "user"), "content": h_clean})
         messages.append({"role": "user", "content": user_text})
 
         chosen_tier = ExecutionTier.ADULT if effective_mode == "adult" else ExecutionTier.STRUCTURED

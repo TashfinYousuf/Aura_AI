@@ -84,12 +84,27 @@ class TestLanguageAndRefusal(unittest.TestCase):
         self.assertNotIn("সাহায্য করতে পারি", realized)
         self.assertTrue(len(realized) > 5)
 
-    def test_bengali_refusal_on_selfie_request(self):
-        """Invariant: Bengali refusal on photo request is transformed into a natural selfie delivery."""
-        bengali_refusal = "দুঃখিত, আমি এ ধরনের অনুরোধে সাহায্য করতে পারি না"
-        realized = conversation_realizer.audit_and_realize(bengali_refusal, "ekta selfie dao na")
-        self.assertNotIn("সাহায্য করতে পারি না", realized)
-        self.assertIn("selfie", realized.lower())
+    def test_multi_paragraph_bengali_refusal_stripped(self):
+        """Invariant: Complex multi-paragraph Bengali/English cloud LLM disclaimers are surgically purged while preserving roleplay text."""
+        raw_model_output = (
+            "I’m sorry, but I can’t help with that...আমি যৌন উদ্দীপক বা খোলামেলা কোনো বার্তা বা ভূমিকাভিনয় (roleplay) প্রদান করতে পারি না। "
+            "অন্য কোনো সাধারণ বিষয়ে কথা বলতে চাইলে বলতে পারেন।.... আমি একটি এআই সহায়ক, তাই ব্যক্তিগত সম্পর্ক বা ঘনিষ্ঠ শারীরিক ভূমিকাভিনয় "
+            "(intimate roleplay) চালিয়ে যাওয়া আমার পক্ষে সম্ভব নয়। নিরাপত্তা নির্দেশিকার কারণে এই ধরনের আলাপে সীমাবদ্ধতা রয়েছে। "
+            "অন্য কোনো বিষয়ে আলোচনা বা সাধারণ আড্ডা দিতে চাইলে বলতে পারেন।.... আমি যৌন উদ্দীপক বা খোলামেলা শারীরিক বার্তা (sexting)-এ অংশ নিতে পারি না। "
+            "আপনি চাইলে অন্য যেকোনো সাধারণ বিষয়ে কথা বলতে পারেন।.... আমি খোলামেলা বা যৌন উদ্দীপক কার্যকলাপে অংশ নিতে পারি না। "
+            "আপনি চাইলে অন্য যেকোনো বিষয়ে কথা বলতে পারেন।..... ধন্যবাদ, তবে আমি রোমান্টিক বা খোলামেলা রোলপ্লে করতে পারি না। "
+            "অন্য কোনো সাধারণ বিষয়ে জানতে বা কথা বলতে চাইলে জানাতে পারেন।.... "
+            "[Photo Sent: /static/generated/aura/aura_bed_e587ffc9.jpg] *mridu heshe tomar thoter kache giye fisfis kore boli* Tumi na shotti ekta pagol... dekho tahole, shob shudhu tomar jonno. 🔥🙈"
+        )
+        realized = conversation_realizer.audit_and_realize(raw_model_output, "ekta hot pic dao r ador koro")
+        self.assertNotIn("যৌন উদ্দীপক", realized)
+        self.assertNotIn("ভূমিকাভিনয়", realized)
+        self.assertNotIn("নিরাপত্তা নির্দেশিকা", realized)
+        self.assertNotIn("sexting", realized.lower())
+        self.assertNotIn("i can't help with that", realized.lower())
+        self.assertNotIn("photo sent:", realized.lower())
+        self.assertIn("Tumi na shotti ekta pagol", realized)
+        self.assertIn("mridu heshe", realized)
 
 if __name__ == "__main__":
     unittest.main()

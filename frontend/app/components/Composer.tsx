@@ -29,6 +29,13 @@ export const Composer: React.FC<ComposerProps> = ({
   setReplyingToMsg
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const textInputRef = useRef<HTMLInputElement>(null);
+
+  React.useEffect(() => {
+    if (replyingToMsg) {
+      textInputRef.current?.focus();
+    }
+  }, [replyingToMsg]);
 
   return (
     <footer className="flex-none p-4 bg-gray-900 border-t border-gray-800">
@@ -108,6 +115,7 @@ export const Composer: React.FC<ComposerProps> = ({
         {/* Text Input & Submit */}
         <form onSubmit={handleTextSend} className="flex-1 flex items-center gap-2">
           <input
+            ref={textInputRef}
             type="text"
             value={input}
             onChange={(e) => setInput(e.target.value)}

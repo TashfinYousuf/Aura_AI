@@ -123,14 +123,14 @@ def create_audit_pdf(output_path: str):
     # Header Banner
     # -------------------------------------------------------------------------
     elements.append(Paragraph("AURA COMPANION OS — ARCHITECTURE & AUDIT REPORT", title_style))
-    elements.append(Paragraph("Autonomous Multimodal Companion | Release v3.5 | Dual-Engine Identity Lock & Multi-Node GPU Pool", subtitle_style))
+    elements.append(Paragraph("Autonomous Multimodal Companion | Release v3.6 | Telegram + Messenger Hybrid & Cloud Refusal Immunity", subtitle_style))
     elements.append(HRFlowable(width="100%", thickness=1.5, color=PRIMARY, spaceAfter=10))
 
     # Meta Table
     meta_data = [
         [
             Paragraph("<b>Project:</b> Aura Multimodal Companion OS", table_cell),
-            Paragraph("<b>Version:</b> 3.5 (Dual-Engine Identity Lock)", table_cell)
+            Paragraph("<b>Version:</b> 3.6 (Hybrid UI/UX & Refusal Immunity)", table_cell)
         ],
         [
             Paragraph("<b>Author / Lead:</b> Tashfin Yousuf", table_cell),
@@ -326,6 +326,16 @@ def create_audit_pdf(output_path: str):
             Paragraph("<b>VAE Half/Float Dtype Mismatch</b>", table_cell),
             Paragraph("Colab PyTorch cast AutoencoderKL to float32 while UNet operated in float16, causing PyTorch dtype mismatch.", table_cell),
             Paragraph("Unified pipeline precision under torch_dtype=torch.float16 with explicit attention and VAE slicing.", table_cell)
+        ],
+        [
+            Paragraph("<b>Canned Cloud Refusal Leak</b>", table_cell),
+            Paragraph("Multi-paragraph Bengali/English safety disclaimers leaked before intimate dialogue ('আমি যৌন উদ্দীপক বার্তা দিতে পারি না...').", table_cell),
+            Paragraph("Engineered multi-stage sentence/clause stripper in ConversationRealizer that surgically deletes boilerplate disclaimers while preserving genuine roleplay dialogue.", table_cell)
+        ],
+        [
+            Paragraph("<b>Frontend UI/UX Modernization</b>", table_cell),
+            Paragraph("Legacy interface lacked message reactions, pinning, inline search, theme selection, and Telegram-style contextual actions.", table_cell),
+            Paragraph("Engineered Telegram + Messenger hybrid UI: rounded-2xl tailored bubbles, read receipts (✓✓), floating 7-emoji reactions, top pinned banner, search, and .txt chat export.", table_cell)
         ]
     ]
     incidents_table = Table(incidents_data, colWidths=[120, 185, 235])
@@ -373,7 +383,7 @@ def create_audit_pdf(output_path: str):
 
     elements.append(Spacer(1, 10))
     elements.append(HRFlowable(width="100%", thickness=1, color=BORDER_COL, spaceAfter=6))
-    elements.append(Paragraph("<b>Aura Multimodal Companion OS — Verification Complete</b> | 41/41 Automated Tests Passing | Synchronized with GitHub main.", ParagraphStyle('Footer', parent=body_style, fontSize=7.5, textColor=TEXT_MUTED, alignment=1)))
+    elements.append(Paragraph("<b>Aura Multimodal Companion OS — Verification Complete</b> | 42/42 Automated Tests Passing | Release v3.6 Synchronized with GitHub main.", ParagraphStyle('Footer', parent=body_style, fontSize=7.5, textColor=TEXT_MUTED, alignment=1)))
 
     doc.build(elements)
     print(f"✅ Audit PDF successfully generated at: {output_path}")

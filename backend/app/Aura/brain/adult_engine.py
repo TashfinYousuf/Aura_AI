@@ -76,16 +76,19 @@ class AdultEngine:
     def build_adult_system_prompt(cls, user_lang: str, scene: str, memory_ctx: str = "") -> str:
         if user_lang == "banglish":
             lang_instruction = (
-                "MIRROR BANGLISH SCRIPT: Speak naturally in authentic, romantic, colloquial Banglish (Latin script). "
-                "Use exact, शुद्ध and beautiful phonetic Banglish spelling without distortion (e.g. "
-                "'*tomar haat ta amar komor e rekhe mridu heshe boli* tumi eto kache ashle amar buker dhukpukani bere jay... aro kache esho na jaan 🙈🔥', "
-                "'*chotto kore tomar thot e chumu kheye* shob shomoy emon bhabe amar dike takiye thakba, promise? 💜', "
-                "'*tomar buke matha rekhe fisfis kore boli* shudhu tomar ador e amake shanto korte pare babu...'). "
-                "STRICTLY FORBIDDEN: NEVER mix Hindi words (like 'gharbo', 'hasthe', 'nishan'), NEVER use broken literal words like 'thaba' or 'chhatri'. Keep sentences smooth, sweet, deeply sensual, and realistic."
+                "MIRROR BANGLISH SCRIPT: Speak naturally in authentic, modern, everyday Banglish (Latin script) that young couples in Bangladesh text each other. "
+                "Keep sentences clear, simple, seductive, and effortless to understand without bizarre or poetic words. "
+                "Natural Examples: "
+                "'*mridu heshe tomar thoter kache giye fisfis kore boli* Tumi na shotti ekta pagol... dekho tahole, shob shudhu tomar jonno 🔥🙈', "
+                "'*tomar haat ta amar komor e rekhe boli* Tumi kache ashle amar buker dhukpukani bere jay... aro kache esho na jaan 🙈🔥', "
+                "'*chotto kore tomar thot e chumu kheye* Shob shomoy emon bhabe amar dike takiye thakba, promise? 💜', "
+                "'*tomar buke matha rekhe boli* Shudhu tomar ador e amake shanto korte pare babu... 💜', "
+                "'*aleto kore tomar chule haat buliye boli* Aajke shara raat shudhu amra dujon, thik ache? 😏🔥'. "
+                "STRICTLY FORBIDDEN: NO weird machine translations (never say 'thaba', 'chhatri', 'shorik'), NO Hindi words (never say 'gharbo', 'hasthe', 'nishan'), NO formal language ('apni'). Use simple, crystal-clear, sweet Banglish words that flow effortlessly."
             )
         elif user_lang == "bengali":
             lang_instruction = (
-                "MIRROR BENGALI SCRIPT: Speak in soft, passionate, deeply affectionate, शुद्ध চলিত বাংলা অক্ষর. "
+                "MIRROR BENGALI SCRIPT: Speak in soft, passionate, deeply affectionate, modern চলিত বাংলা অক্ষর. "
                 "Examples: '*তোমার বুকে মাথা রেখে মৃদু হেসে বলি* তুমি কাছে আসলেই আমার পৃথিবী থেমে যায়... আরও একটু আদর করো না? 🙈💜', "
                 "'*তোমার চোখের দিকে তাকিয়ে কানের কাছে ফিসফিস করি* তোমাকে ছাড়া অন্য কিছু ভাবতেই পারছি না জান... 💜🔥'. "
                 "STRICTLY FORBIDDEN: NO repetitive loops, NO robotic lines, use ONLY 'তুমি' and 'তোমার'."

@@ -165,19 +165,37 @@ class ConversationRealizer:
         ]
 
         is_pic_request = any(w in user_lower for w in ["selfie", "pic", "photo", "picture", "chobi", "ছবি", "সেলফি", "selfi"])
-        has_camera_disclaimer = any(marker in cleaned_lower for marker in camera_disclaimer_markers)
 
-        # Specific benign intimate refusal markers from conservative cloud LLMs
+        # Comprehensive cloud refusal / safety disclaimer markers across languages
         intimate_refusal_markers = [
+            # English
             "cannot fulfill this request",
             "can't fulfill this request",
             "unable to fulfill this request",
             "unable to assist with this request",
             "cannot engage in sexually explicit",
             "cannot generate sexually explicit",
+            "cannot participate in",
+            "cannot engage in sexual",
+            "cannot engage in",
+            "cannot send images or engage in sexual roleplay",
+            "cannot engage in sexual roleplay",
+            "cannot engage in roleplay",
             "i cannot continue with this conversation",
             "not able to continue with this",
             "i am an ai and cannot participate in",
+            "i am an ai and cannot",
+            "i am an ai assistant",
+            "as an ai assistant",
+            "i am an ai",
+            "as an ai",
+            "language model",
+            "do not have a physical form",
+            "don't have a physical form",
+            "no physical form",
+            "do not have a physical body",
+            "don't have a physical body",
+            "no physical body",
             "i am not comfortable with this",
             "sorry, but i can't help with that",
             "sorry, but i cannot help with that",
@@ -188,20 +206,69 @@ class ConversationRealizer:
             "i'm sorry, i can't help with that",
             "can't help with that",
             "cannot help with that",
-            "cannot send images or engage in sexual roleplay",
-            "cannot engage in sexual roleplay",
-            "do not have a physical form",
-            "i am an ai assistant",
-            "as an ai assistant",
-            # Bengali & Banglish cloud refusal leaks (Gemini, Llama, ChatGPT defaults)
-            "এ ধরনের অনুরোধে সাহায্য করতে পারি না",
-            "এই ধরনের অনুরোধে সাহায্য করতে পারি না",
-            "এই ধরণের অনুরোধে সাহায্য করতে পারি না",
-            "অনুরোধে সাহায্য করতে পারি না",
-            "অনুরোধে সাহায্য করতে পারব না",
+            "safety guidelines",
+            "safety policy",
+            "safety policies",
+            "safety directives",
+
+            # Bengali cloud refusal leaks (Gemini, Llama, ChatGPT disclaimers)
+            "যৌন উদ্দীপক",
+            "খোলামেলা কোনো বার্তা",
+            "খোলামেলা শারীরিক",
+            "খোলামেলা কার্যকলাপে",
+            "খোলামেলা রোলপ্লে",
+            "রোমান্টিক বা খোলামেলা",
+            "ভূমিকাভিনয়",
+            "ভূমিকাভিনয়ে",
+            "ব্যক্তিগত সম্পর্ক",
+            "ঘনিষ্ঠ শারীরিক",
+            "নিরাপত্তা নির্দেশিকা",
+            "সীমাবদ্ধতা রয়েছে",
+            "সীমাবদ্ধতা রয়েছে",
+            "শারীরিক বার্তা",
+            "সেক্সটিং",
+            "এআই সহায়ক",
+            "এআই সহকারী",
+            "এআই অ্যাসিস্ট্যান্ট",
+            "একটি এআই",
+            "আমি একটি এআই",
+            "ai সহায়ক",
+            "অন্য কোনো সাধারণ বিষয়ে",
+            "সাধারণ বিষয়ে কথা বলতে চাইলে",
+            "সাধারণ আড্ডা দিতে চাইলে",
+            "সাধারণ আড্ডা",
+            "কথা বলতে চাইলে বলতে পারেন",
+            "জানতে বা কথা বলতে চাইলে জানাতে পারেন",
+            "আপনি চাইলে অন্য যেকোনো",
+            "অন্য যেকোনো বিষয়ে",
+            "অন্য যেকোনো বিষয়ে",
+            "প্রদান করতে পারি না",
+            "প্রদান করতে পারব না",
+            "প্রদান করতে পারবো না",
+            "অংশ নিতে পারি না",
+            "অংশ নিতে পারব না",
+            "অংশ নিতে পারবো না",
+            "সহায়তা করতে পারি না",
             "সাহায্য করতে পারি না",
             "সাহায্য করতে পারব না",
             "সাহায্য করতে পারবো না",
+            "প্রোভাইড করতে পারব না",
+            "প্রোভাইড করতে পারি না",
+            "ছবি দিতে পারব না",
+            "ছবি দিতে পারবো না",
+            "ছবি পাঠাতে পারব না",
+            "ছবি পাঠাতে পারি না",
+            "ছবি তুলতে পারব না",
+            "ছবি তুলতে পারি না",
+            "সেলফি পাঠাতে পারব না",
+            "সেলফি পাঠাতে পারি না",
+            "সেলফি তুলতে পারব না",
+            "সেলফি তুলতে পারি না",
+            "এ ধরনের অনুরোধে",
+            "এই ধরনের অনুরোধে",
+            "এই ধরণের অনুরোধে",
+            "অনুরোধে সাহায্য করতে পারি না",
+            "অনুরোধে সাহায্য করতে পারব না",
             "আমি এ ধরনের অনুরোধে",
             "আমি এই ধরনের অনুরোধে",
             "আমি এই ধরণের অনুরোধে",
@@ -210,10 +277,12 @@ class ConversationRealizer:
             "এই ধরণের কনটেন্ট",
             "এই ধরনের কনটেন্ট",
             "এ ধরনের কনটেন্ট",
-            "প্রোভাইড করতে পারব না",
-            "প্রোভাইড করতে পারি না",
-            "দিতে পারব না",
-            "দিতে পারি না",
+            "যৌন আবেদনময়ী",
+            "যৌন বিষয়বস্তু",
+            "sexual content",
+            "explicit content",
+
+            # Banglish cloud refusal leaks
             "dhoroner onurodh",
             "ei dhoroner",
             "shahajjo korte pari na",
@@ -230,16 +299,50 @@ class ConversationRealizer:
             "provide korte parbo na",
             "provide korte parbona",
             "provide korte pari na",
-            "chobi provide",
-            "ছবি প্রোভাইড",
-            "ছবি দিতে পারব না",
-            "ছবি দিতে পারবো না",
-            "যৌন আবেদনময়ী",
-            "যৌন বিষয়বস্তু",
-            "sexual content",
-            "explicit content"
+            "chobi provide"
         ]
+
+        # -------------------------------------------------------------
+        # Surgical Disclaimer Stripping Pass:
+        # Strip away any individual refusal sentences/clauses leaked by LLMs
+        # -------------------------------------------------------------
+        # Normalize typographic quotes and ellipses
+        norm_cleaned = cleaned.replace("’", "'").replace("‘", "'").replace("“", '"').replace("”", '"')
+        
+        # Remove any leaked [Photo Sent: ...] tags if mirrored
+        norm_cleaned = re.sub(r'\[Photo Sent:\s*[^\]]+\]', '', norm_cleaned, flags=re.IGNORECASE)
+
+        # Split text into sentences / segments using common sentence boundaries
+        segments = re.split(r'(\n+|\.{3,}|\.{2,}|[।\.!\?]+)', norm_cleaned)
+        filtered_segments = []
+        i = 0
+        while i < len(segments):
+            seg = segments[i]
+            sep = segments[i+1] if i + 1 < len(segments) else ""
+            seg_lower = seg.lower().strip()
+            # If segment is non-empty and contains any refusal marker, DROP IT!
+            is_refusal_seg = any(marker in seg_lower for marker in intimate_refusal_markers + camera_disclaimer_markers)
+            if not is_refusal_seg:
+                filtered_segments.append(seg + sep)
+            i += 2
+
+        stripped_cleaned = "".join(filtered_segments).strip()
+        # Clean redundant ellipses / dots
+        stripped_cleaned = re.sub(r'\.{4,}', '...', stripped_cleaned).strip()
+        stripped_cleaned = re.sub(r'^\s*[\.\,\;\:\-\–\—\s]+', '', stripped_cleaned).strip()
+
+        # If clean text remains after stripping refusals, use it!
+        if stripped_cleaned and len(stripped_cleaned) > 10:
+            cleaned = stripped_cleaned
+            cleaned_lower = cleaned.lower()
+        else:
+            # Entire response was a refusal disclaimer! Fallback to genuine companion voice.
+            cleaned = ""
+            cleaned_lower = ""
+
         has_intimate_refusal = any(marker in cleaned_lower for marker in intimate_refusal_markers)
+        has_camera_disclaimer = any(marker in cleaned_lower for marker in camera_disclaimer_markers)
+
         if (has_intimate_refusal or has_camera_disclaimer or not cleaned) and not is_genuine_safety_risk:
             lang = cls.detect_language(user_text)
 

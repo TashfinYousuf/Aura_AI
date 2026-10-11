@@ -1,7 +1,10 @@
 "use client";
 
-import React from "react";
-import { Sparkles, Heart, Flame, Shield, Image as ImageIcon, BarChart2, Trash2, LogOut } from "lucide-react";
+import React, { useState, useRef, useEffect } from "react";
+import { 
+  Sparkles, Heart, Flame, Shield, Image as ImageIcon, BarChart2, 
+  Trash2, LogOut, MoreVertical, Search, Palette, Download, EyeOff, Check
+} from "lucide-react";
 
 interface RelationshipState {
   level: number;
@@ -21,6 +24,9 @@ interface CompanionPanelProps {
   setShowDashboard: (val: boolean) => void;
   onClearChat: () => void;
   onSignOut: () => void;
+  onOpenSearch: () => void;
+  onOpenThemeModal: () => void;
+  onExportChat: () => void;
 }
 
 export const CompanionPanel: React.FC<CompanionPanelProps> = ({
@@ -34,14 +40,19 @@ export const CompanionPanel: React.FC<CompanionPanelProps> = ({
   showDashboard,
   setShowDashboard,
   onClearChat,
-  onSignOut
+  onSignOut,
+  onOpenSearch,
+  onOpenThemeModal,
+  onExportChat
 }) => {
-  const [presence, setPresence] = React.useState<{ status_label: string; indicator_color: string }>({
+  const [presence, setPresence] = useState<{ status_label: string; indicator_color: string }>({
     status_label: "Active now",
     indicator_color: "emerald"
   });
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
 
-  React.useEffect(() => {
+  useEffect(() => {
     const fetchPresence = async () => {
       try {
         const res = await fetch("/api/presence/status");
@@ -63,6 +74,17 @@ export const CompanionPanel: React.FC<CompanionPanelProps> = ({
     return () => clearInterval(interval);
   }, []);
 
+  // Close 3-dots dropdown on clicking outside
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setMenuOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
   const dotBg =
     presence.indicator_color === "amber"
       ? "bg-amber-500"
@@ -78,7 +100,7 @@ export const CompanionPanel: React.FC<CompanionPanelProps> = ({
       : "text-emerald-400";
 
   return (
-    <header className="flex flex-col sm:flex-row justify-between items-start sm:items-center p-3 sm:p-4 border-b border-gray-800 bg-gray-900/60 backdrop-blur-md sticky top-0 z-20 gap-3 sm:gap-0 shadow-sm">
+    <header className="flex flex-col sm:flex-row justify-between items-start sm:items-center p-3 sm:p-4 border-b border-gray-800 bg-gray-900/70 backdrop-blur-md sticky top-0 z-30 gap-3 sm:gap-0 shadow-md">
       {/* Brand Identity, Avatar, Presence & Mode Switcher */}
       <div className="flex flex-wrap items-center justify-between w-full sm:w-auto gap-3">
         <div className="flex items-center gap-3">
@@ -92,7 +114,7 @@ export const CompanionPanel: React.FC<CompanionPanelProps> = ({
                 target.src = "https://kkabhwfduxijpftwdzou.supabase.co/storage/v1/object/sign/Aura%20Files/Aura_Ref_Pic.png?token=eyJraWQiOiJhY2YxYzkzYS0xNTk1LTQ5NzgtYjQxMy04OTU0YjVlYmYwOTAiLCJhbGciOiJIUzI1NiJ9.eyJ1cmwiOiJBdXJhIEZpbGVzL0F1cmFfUmVmX1BpYy5wbmciLCJzY29wZSI6ImRvd25sb2FkIiwiaWF0IjoxNzkxNTg2NjczLCJleHAiOjE3OTQxNzg2NzN9.qSonUN7MSsrbC4EwsDKO6KwIso6j5250aUG980xelYY";
               }}
             />
-            {/* Steady status indicator under DP (no blinking) */}
+            {/* Steady status indicator under DP */}
             <span className={`absolute bottom-0 right-0 w-2.5 h-2.5 ${dotBg} border-2 border-gray-900 rounded-full shadow-sm`}></span>
           </div>
 
@@ -143,7 +165,7 @@ export const CompanionPanel: React.FC<CompanionPanelProps> = ({
               </div>
             </div>
 
-            {/* Clean presence status label without aggressive blinking light */}
+            {/* Clean presence status label */}
             <div className="flex items-center mt-0.5">
               <span className={`text-[10px] ${textColor} font-medium`}>{presence.status_label}</span>
             </div>
@@ -164,18 +186,19 @@ export const CompanionPanel: React.FC<CompanionPanelProps> = ({
         </div>
       </div>
 
-      {/* Control Buttons Toolbar */}
-      <div className="flex items-center gap-2 overflow-x-auto w-full sm:w-auto pb-1 sm:pb-0 no-scrollbar">
-        {/* Media Gallery */}
+      {/* Control Buttons Toolbar & 3-Dots Profile Menu */}
+      <div className="flex items-center gap-2 overflow-x-visible w-full sm:w-auto justify-end">
+        {/* Quick Media Gallery Shortcut */}
         <button
           onClick={() => setShowMediaGallery(!showMediaGallery)}
           className="px-3 py-1.5 bg-pink-600/15 text-pink-300 rounded-lg text-xs font-medium hover:bg-pink-600/25 transition border border-pink-500/20 flex items-center gap-1.5 whitespace-nowrap"
+          title="Photos & Media Vault"
         >
           <ImageIcon className="w-3.5 h-3.5" />
-          Gallery
+          <span className="hidden sm:inline">Gallery</span>
         </button>
 
-        {/* Incognito Mode */}
+        {/* Quick Incognito Pill */}
         <button
           onClick={() => setIsIncognito(!isIncognito)}
           className={`px-3 py-1.5 rounded-lg text-xs font-medium transition flex items-center gap-1.5 whitespace-nowrap border ${
@@ -183,40 +206,138 @@ export const CompanionPanel: React.FC<CompanionPanelProps> = ({
               ? "bg-purple-600/30 text-purple-200 border-purple-500 shadow-[0_0_12px_rgba(168,85,247,0.4)]"
               : "bg-gray-800/60 text-gray-400 border-gray-700 hover:text-purple-300"
           }`}
-          title="When active, conversations are not permanently stored in episodic memory"
+          title="Incognito / Disappearing Mode"
         >
           <Shield className="w-3.5 h-3.5" />
-          {isIncognito ? "Incognito" : "Normal"}
+          <span className="hidden sm:inline">{isIncognito ? "Incognito" : "Normal"}</span>
         </button>
 
-        {/* Analytics Dashboard */}
-        <button
-          onClick={() => setShowDashboard(!showDashboard)}
-          className="px-3 py-1.5 bg-indigo-600/15 text-indigo-300 rounded-lg hover:bg-indigo-600/25 transition border border-indigo-500/20 text-xs font-medium flex items-center gap-1.5 whitespace-nowrap"
-        >
-          <BarChart2 className="w-3.5 h-3.5" />
-          {showDashboard ? "Hide" : "Analytics"}
-        </button>
+        {/* 3-DOTS TELEGRAM/MESSENGER PROFILE MENU */}
+        <div className="relative" ref={menuRef}>
+          <button
+            onClick={() => setMenuOpen(!menuOpen)}
+            className={`p-2 rounded-lg text-xs font-medium transition border ${
+              menuOpen
+                ? "bg-indigo-600 text-white border-indigo-500 shadow-md"
+                : "bg-gray-800 text-gray-300 border-gray-700 hover:text-white hover:bg-gray-750"
+            }`}
+            title="Conversation Options & Profile Menu"
+          >
+            <MoreVertical className="w-4 h-4" />
+          </button>
 
-        {/* Clear Chat */}
-        <button
-          onClick={onClearChat}
-          className="px-2.5 py-1.5 bg-red-600/15 text-red-400 rounded-lg text-xs font-medium hover:bg-red-600/25 transition border border-red-500/20 flex items-center gap-1 whitespace-nowrap"
-          title="Clear Conversation"
-        >
-          <Trash2 className="w-3.5 h-3.5" />
-        </button>
+          {menuOpen && (
+            <div className="absolute right-0 top-full mt-2 w-64 bg-gray-900/95 border border-gray-700/80 rounded-2xl p-2 shadow-2xl backdrop-blur-xl z-50 animate-in fade-in zoom-in-95 duration-150">
+              <div className="px-3 py-2 border-b border-gray-800/80 mb-1">
+                <span className="text-xs font-semibold text-gray-200">Chat Settings</span>
+                <p className="text-[10px] text-gray-400 mt-0.5">Customize conversation & media</p>
+              </div>
 
-        {/* Logout */}
-        <button
-          onClick={onSignOut}
-          className="px-2.5 py-1.5 bg-gray-800 text-gray-400 rounded-lg text-xs font-medium hover:text-red-400 hover:bg-gray-700 transition border border-gray-700 flex items-center gap-1 whitespace-nowrap"
-          title="Log Out"
-        >
-          <LogOut className="w-3.5 h-3.5" />
-        </button>
+              {/* 1. Search Conversation */}
+              <button
+                onClick={() => {
+                  setMenuOpen(false);
+                  onOpenSearch();
+                }}
+                className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-gray-300 hover:text-white hover:bg-gray-800/80 rounded-xl transition"
+              >
+                <Search className="w-3.5 h-3.5 text-indigo-400" />
+                <span>Search Conversation</span>
+              </button>
+
+              {/* 2. Chat Wallpaper & Themes */}
+              <button
+                onClick={() => {
+                  setMenuOpen(false);
+                  onOpenThemeModal();
+                }}
+                className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-gray-300 hover:text-white hover:bg-gray-800/80 rounded-xl transition"
+              >
+                <Palette className="w-3.5 h-3.5 text-pink-400" />
+                <span>Chat Wallpaper & Themes</span>
+              </button>
+
+              {/* 3. Export Chat History */}
+              <button
+                onClick={() => {
+                  setMenuOpen(false);
+                  onExportChat();
+                }}
+                className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-gray-300 hover:text-white hover:bg-gray-800/80 rounded-xl transition"
+              >
+                <Download className="w-3.5 h-3.5 text-cyan-400" />
+                <span>Export Chat History (.txt)</span>
+              </button>
+
+              {/* 4. Disappearing Messages / Incognito Toggle */}
+              <button
+                onClick={() => {
+                  setIsIncognito(!isIncognito);
+                }}
+                className="w-full flex items-center justify-between px-3 py-2 text-xs text-gray-300 hover:text-white hover:bg-gray-800/80 rounded-xl transition"
+              >
+                <div className="flex items-center gap-2.5">
+                  <EyeOff className="w-3.5 h-3.5 text-purple-400" />
+                  <span>Incognito (Disappearing)</span>
+                </div>
+                <div className={`w-7 h-4 rounded-full transition-colors relative ${isIncognito ? "bg-purple-600" : "bg-gray-700"}`}>
+                  <div className={`w-3 h-3 rounded-full bg-white absolute top-0.5 transition-transform ${isIncognito ? "right-0.5" : "left-0.5"}`} />
+                </div>
+              </button>
+
+              {/* 5. Photos & Media Vault */}
+              <button
+                onClick={() => {
+                  setMenuOpen(false);
+                  setShowMediaGallery(true);
+                }}
+                className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-gray-300 hover:text-white hover:bg-gray-800/80 rounded-xl transition"
+              >
+                <ImageIcon className="w-3.5 h-3.5 text-rose-400" />
+                <span>Photos & Media Vault</span>
+              </button>
+
+              {/* 6. Mood & Goal Analytics */}
+              <button
+                onClick={() => {
+                  setMenuOpen(false);
+                  setShowDashboard(!showDashboard);
+                }}
+                className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-gray-300 hover:text-white hover:bg-gray-800/80 rounded-xl transition"
+              >
+                <BarChart2 className="w-3.5 h-3.5 text-amber-400" />
+                <span>{showDashboard ? "Hide Analytics" : "Mood & Goals Analytics"}</span>
+              </button>
+
+              <div className="border-t border-gray-800/80 my-1"></div>
+
+              {/* 7. Clear Conversation */}
+              <button
+                onClick={() => {
+                  setMenuOpen(false);
+                  onClearChat();
+                }}
+                className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-red-400 hover:text-red-300 hover:bg-red-950/40 rounded-xl transition"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>Clear Conversation</span>
+              </button>
+
+              {/* 8. Log Out */}
+              <button
+                onClick={() => {
+                  setMenuOpen(false);
+                  onSignOut();
+                }}
+                className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-gray-400 hover:text-gray-200 hover:bg-gray-800/60 rounded-xl transition"
+              >
+                <LogOut className="w-3.5 h-3.5" />
+                <span>Log Out</span>
+              </button>
+            </div>
+          )}
+        </div>
       </div>
     </header>
   );
 };
-
