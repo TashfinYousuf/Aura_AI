@@ -17,10 +17,10 @@ else:
     load_dotenv(override=True)
 
 class ModelRegistry:
-    FAST_MODEL: str = "qwen/qwen3.8-27b"
-    SMART_MODEL: str = "qwen/qwen3.8-27b"
+    FAST_MODEL: str = "openai/gpt-oss-120b"
+    SMART_MODEL: str = "openai/gpt-oss-120b"
     STRUCTURED_MODEL: str = "openai/gpt-oss-120b"
-    SPECIALIZED_MODEL: str = "qwen/qwen3.8-27b"
+    SPECIALIZED_MODEL: str = "openai/gpt-oss-120b"
 
 class Settings(BaseSettings):
     PROJECT_NAME: str = "Aura Multimodal Companion OS"
@@ -44,10 +44,9 @@ class Settings(BaseSettings):
     DEFAULT_TEMPERATURE: float = 0.65
     MAX_TOKENS: int = 400
     FALLBACK_CHAT_MODELS: List[str] = [
-        "qwen/qwen3.8-27b",
         "openai/gpt-oss-120b",
-        "openai/gpt-oss-20b",
-        "allam-2-7b"
+        "meta-llama/llama-3.3-70b-versatile",
+        "openai/gpt-oss-20b"
     ]
     
     # Security & Storage

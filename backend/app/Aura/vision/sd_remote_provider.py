@@ -209,31 +209,31 @@ class RemoteStableDiffusionProvider:
             outfit = "wearing a cozy oversized boyfriend hoodie, bare legs, relaxed cute couch pose"
             actual_scene = "living room"
         elif scene in ["bed", "bedroom"] or any(w in p_lower for w in ["bed", "sleep", "ঘুম"]):
-            outfit = "wearing a delicate white floral tank top with lace trim and soft shorts, relaxing on bed"
+            outfit = "wearing a delicate white ribbed spaghetti strap camisole top with tiny bow and soft lounge shorts, relaxed on bed"
             actual_scene = "bedroom"
         else:
-            outfit = "wearing a casual cute white tank top with lace trim and comfy shorts"
+            outfit = "wearing a cute white spaghetti strap crop camisole and comfy lounge shorts"
             actual_scene = scene
 
-        # DALL-E Inspired Youthful & Cute Facial Anchor Prompt strictly under 75 tokens
+        # Aura Signature Photographic Identity Prompt strictly under 75 tokens
         positive_prompt = (
-            f"candid 35mm portrait of aura_woman, cute youthful 21yo Slavic-Eurasian girl, sweet affectionate smile, "
-            f"large sparkling hazel-amber eyes with soft aegyo-sal, delicate cute button nose, full plump pink lips, "
-            f"soft round cheeks with natural blush, dark voluminous wavy hair, {outfit}, {actual_scene}, natural skin pores, soft warm lighting"
+            f"candid smartphone bedroom selfie of aura_woman, 22yo gorgeous Eurasian beauty, warm affectionate smile, "
+            f"large sparkling hazel-amber eyes, cute button nose, full plump pink glossy lips, curvaceous hourglass figure, "
+            f"long dark brown voluminous layered hair, {outfit}, {actual_scene}, natural dewy skin texture with real pores"
         )
 
         if explicit_nude:
             negative_prompt = (
-                "(mature, old, aged, harsh jawline, hollow cheeks, heavy makeup, stern:1.3), "
+                "flower crown, flowers in hair, headpiece, (mature, old, aged, harsh jawline, heavy makeup:1.3), "
                 "(extra heads, duplicate limbs, mutated hands, multiple people:1.4), "
-                "(plastic skin, doll, anime, 3d, cgi, over-smooth, airbrushed, blurry, bad anatomy:1.4)"
+                "(plastic skin, doll, anime, 3d, cgi, over-smooth, airbrushed, cartoon, blurry, bad anatomy:1.4)"
             )
         else:
             negative_prompt = (
                 "(nude, naked, fully unclothed, bare breasts, exposed nipples:1.4), "
-                "(mature, old, aged, harsh jawline, hollow cheeks, heavy makeup, stern:1.3), "
+                "flower crown, flowers in hair, headpiece, (mature, old, aged, harsh jawline, heavy makeup:1.3), "
                 "(extra heads, duplicate limbs, mutated hands, multiple people:1.4), "
-                "(plastic skin, doll, anime, 3d, cgi, over-smooth, airbrushed, blurry, bad anatomy:1.4)"
+                "(plastic skin, doll, anime, 3d, cgi, over-smooth, airbrushed, cartoon, blurry, bad anatomy:1.4)"
             )
 
         return positive_prompt, negative_prompt
