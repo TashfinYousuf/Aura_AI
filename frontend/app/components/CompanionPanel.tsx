@@ -100,76 +100,74 @@ export const CompanionPanel: React.FC<CompanionPanelProps> = ({
       : "text-emerald-400";
 
   return (
-    <header className="flex flex-col sm:flex-row justify-between items-start sm:items-center p-3 sm:p-4 border-b border-gray-800 bg-gray-900/70 backdrop-blur-md sticky top-0 z-30 gap-3 sm:gap-0 shadow-md">
-      {/* Brand Identity, Avatar, Presence & Mode Switcher */}
-      <div className="flex flex-wrap items-center justify-between w-full sm:w-auto gap-3">
-        <div className="flex items-center gap-3">
-          <div className="relative shrink-0">
-            <img
-              src="/api/static/references/aura_master_identity.png"
-              alt="Aura"
-              className="w-9 h-9 sm:w-10 sm:h-10 rounded-full object-cover border border-purple-500/40 shadow-sm"
-              onError={(e) => {
-                const target = e.target as HTMLImageElement;
-                target.src = "https://kkabhwfduxijpftwdzou.supabase.co/storage/v1/object/sign/Aura%20Files/Aura_Ref_Pic.png?token=eyJraWQiOiJhY2YxYzkzYS0xNTk1LTQ5NzgtYjQxMy04OTU0YjVlYmYwOTAiLCJhbGciOiJIUzI1NiJ9.eyJ1cmwiOiJBdXJhIEZpbGVzL0F1cmFfUmVmX1BpYy5wbmciLCJzY29wZSI6ImRvd25sb2FkIiwiaWF0IjoxNzkxNTg2NjczLCJleHAiOjE3OTQxNzg2NzN9.qSonUN7MSsrbC4EwsDKO6KwIso6j5250aUG980xelYY";
-              }}
-            />
-            {/* Steady status indicator under DP */}
-            <span className={`absolute bottom-0 right-0 w-2.5 h-2.5 ${dotBg} border-2 border-gray-900 rounded-full shadow-sm`}></span>
+    <header className="flex flex-col md:flex-row justify-between items-center px-3 py-2.5 sm:px-4 sm:py-3 border-b border-gray-800 bg-gray-900/80 backdrop-blur-md sticky top-0 z-30 gap-2.5 md:gap-0 shadow-md">
+      {/* Left: Brand Identity, Avatar, Presence */}
+      <div className="flex items-center gap-3 shrink-0">
+        <div className="relative shrink-0">
+          <img
+            src="/api/static/references/aura_master_identity.png"
+            alt="Aura"
+            className="w-9 h-9 sm:w-10 sm:h-10 rounded-full object-cover border border-purple-500/40 shadow-sm"
+            onError={(e) => {
+              const target = e.target as HTMLImageElement;
+              target.src = "https://kkabhwfduxijpftwdzou.supabase.co/storage/v1/object/sign/Aura%20Files/Aura_Ref_Pic.png?token=eyJraWQiOiJhY2YxYzkzYS0xNTk1LTQ5NzgtYjQxMy04OTU0YjVlYmYwOTAiLCJhbGciOiJIUzI1NiJ9.eyJ1cmwiOiJBdXJhIEZpbGVzL0F1cmFfUmVmX1BpYy5wbmciLCJzY29wZSI6ImRvd25sb2FkIiwiaWF0IjoxNzkxNTg2NjczLCJleHAiOjE3OTQxNzg2NzN9.qSonUN7MSsrbC4EwsDKO6KwIso6j5250aUG980xelYY";
+            }}
+          />
+          {/* Steady status indicator under DP */}
+          <span className={`absolute bottom-0 right-0 w-2.5 h-2.5 ${dotBg} border-2 border-gray-900 rounded-full shadow-sm`}></span>
+        </div>
+
+        <div className="flex flex-col">
+          <h1 className="text-lg sm:text-xl font-black text-transparent bg-clip-text bg-gradient-to-r from-indigo-300 via-purple-300 to-pink-300 tracking-tight leading-none">
+            Aura
+          </h1>
+          {/* Clean presence status label */}
+          <div className="flex items-center mt-0.5">
+            <span className={`text-[10px] ${textColor} font-medium`}>{presence.status_label}</span>
           </div>
+        </div>
+      </div>
 
-          <div className="flex flex-col">
-            <div className="flex items-center gap-2">
-              <h1 className="text-lg sm:text-xl font-black text-transparent bg-clip-text bg-gradient-to-r from-indigo-300 via-purple-300 to-pink-300 tracking-tight leading-none">
-                Aura
-              </h1>
-
-              {/* Mode Switcher Pill: Normal vs Intimate vs Creator */}
-              <div className="flex items-center bg-gray-800/80 p-0.5 rounded-full border border-gray-700/60 text-xs">
-                <button
-                  onClick={() => setPresentationMode("private")}
-                  className={`px-2.5 py-1 rounded-full transition-all flex items-center gap-1 font-medium ${
-                    presentationMode === "private"
-                      ? "bg-indigo-600 text-white shadow-sm"
-                      : "text-gray-400 hover:text-gray-200"
-                  }`}
-                  title="1:1 Intimate & Intellectual Companion"
-                >
-                  <Heart className="w-3 h-3 fill-current" />
-                  Normal
-                </button>
-                <button
-                  onClick={() => setPresentationMode("adult")}
-                  className={`px-2.5 py-1 rounded-full transition-all flex items-center gap-1 font-medium ${
-                    presentationMode === "adult"
-                      ? "bg-gradient-to-r from-rose-600 to-pink-600 text-white shadow-sm shadow-pink-900/50"
-                      : "text-gray-400 hover:text-pink-300"
-                  }`}
-                  title="Sensual & Intimate Adult Roleplay Mode"
-                >
-                  <Flame className="w-3 h-3 fill-current" />
-                  Intimate
-                </button>
-                <button
-                  onClick={() => setPresentationMode("public")}
-                  className={`px-2.5 py-1 rounded-full transition-all flex items-center gap-1 font-medium ${
-                    presentationMode === "public"
-                      ? "bg-gradient-to-r from-pink-600 to-purple-600 text-white shadow-sm"
-                      : "text-gray-400 hover:text-gray-200"
-                  }`}
-                  title="Virtual Creator & Brand Ambassador"
-                >
-                  <Sparkles className="w-3 h-3" />
-                  Creator
-                </button>
-              </div>
-            </div>
-
-            {/* Clean presence status label */}
-            <div className="flex items-center mt-0.5">
-              <span className={`text-[10px] ${textColor} font-medium`}>{presence.status_label}</span>
-            </div>
-          </div>
+      {/* Center: Center-Aligned Mode Switcher & Relationship Progression */}
+      <div className="flex flex-wrap items-center justify-center gap-2 sm:gap-3">
+        {/* Mode Switcher Pill: Normal vs Intimate vs Creator */}
+        <div className="flex items-center bg-gray-800/80 p-0.5 rounded-full border border-gray-700/60 text-xs shadow-inner">
+          <button
+            onClick={() => setPresentationMode("private")}
+            className={`px-2.5 py-1 rounded-full transition-all flex items-center gap-1 font-medium ${
+              presentationMode === "private"
+                ? "bg-indigo-600 text-white shadow-sm"
+                : "text-gray-400 hover:text-gray-200"
+            }`}
+            title="1:1 Intimate & Intellectual Companion"
+          >
+            <Heart className="w-3 h-3 fill-current" />
+            Normal
+          </button>
+          <button
+            onClick={() => setPresentationMode("adult")}
+            className={`px-2.5 py-1 rounded-full transition-all flex items-center gap-1 font-medium ${
+              presentationMode === "adult"
+                ? "bg-gradient-to-r from-rose-600 to-pink-600 text-white shadow-sm shadow-pink-900/50"
+                : "text-gray-400 hover:text-pink-300"
+            }`}
+            title="Sensual & Intimate Adult Roleplay Mode"
+          >
+            <Flame className="w-3 h-3 fill-current" />
+            Intimate
+          </button>
+          <button
+            onClick={() => setPresentationMode("public")}
+            className={`px-2.5 py-1 rounded-full transition-all flex items-center gap-1 font-medium ${
+              presentationMode === "public"
+                ? "bg-gradient-to-r from-pink-600 to-purple-600 text-white shadow-sm"
+                : "text-gray-400 hover:text-gray-200"
+            }`}
+            title="Virtual Creator & Brand Ambassador"
+          >
+            <Sparkles className="w-3 h-3" />
+            Creator
+          </button>
         </div>
 
         {/* Level & Progress */}
@@ -186,30 +184,20 @@ export const CompanionPanel: React.FC<CompanionPanelProps> = ({
         </div>
       </div>
 
-      {/* Control Buttons Toolbar & 3-Dots Profile Menu */}
-      <div className="flex items-center gap-2 overflow-x-visible w-full sm:w-auto justify-end">
-        {/* Quick Media Gallery Shortcut */}
+      {/* Right: Analytics & 3-Dots Profile Menu (Outer Gallery & Normal removed per user instruction) */}
+      <div className="flex items-center gap-2 shrink-0">
+        {/* Outer Analytics Toggle Button */}
         <button
-          onClick={() => setShowMediaGallery(!showMediaGallery)}
-          className="px-3 py-1.5 bg-pink-600/15 text-pink-300 rounded-lg text-xs font-medium hover:bg-pink-600/25 transition border border-pink-500/20 flex items-center gap-1.5 whitespace-nowrap"
-          title="Photos & Media Vault"
-        >
-          <ImageIcon className="w-3.5 h-3.5" />
-          <span className="hidden sm:inline">Gallery</span>
-        </button>
-
-        {/* Quick Incognito Pill */}
-        <button
-          onClick={() => setIsIncognito(!isIncognito)}
+          onClick={() => setShowDashboard(!showDashboard)}
           className={`px-3 py-1.5 rounded-lg text-xs font-medium transition flex items-center gap-1.5 whitespace-nowrap border ${
-            isIncognito
-              ? "bg-purple-600/30 text-purple-200 border-purple-500 shadow-[0_0_12px_rgba(168,85,247,0.4)]"
-              : "bg-gray-800/60 text-gray-400 border-gray-700 hover:text-purple-300"
+            showDashboard
+              ? "bg-indigo-600 text-white border-indigo-500 shadow-sm"
+              : "bg-gray-800/80 text-gray-300 border-gray-700 hover:text-white hover:bg-gray-750"
           }`}
-          title="Incognito / Disappearing Mode"
+          title="Mood & Goal Analytics"
         >
-          <Shield className="w-3.5 h-3.5" />
-          <span className="hidden sm:inline">{isIncognito ? "Incognito" : "Normal"}</span>
+          <BarChart2 className="w-3.5 h-3.5 text-amber-400" />
+          <span className="hidden sm:inline">Analytics</span>
         </button>
 
         {/* 3-DOTS TELEGRAM/MESSENGER PROFILE MENU */}
@@ -297,21 +285,9 @@ export const CompanionPanel: React.FC<CompanionPanelProps> = ({
                 <span>Photos & Media Vault</span>
               </button>
 
-              {/* 6. Mood & Goal Analytics */}
-              <button
-                onClick={() => {
-                  setMenuOpen(false);
-                  setShowDashboard(!showDashboard);
-                }}
-                className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-gray-300 hover:text-white hover:bg-gray-800/80 rounded-xl transition"
-              >
-                <BarChart2 className="w-3.5 h-3.5 text-amber-400" />
-                <span>{showDashboard ? "Hide Analytics" : "Mood & Goals Analytics"}</span>
-              </button>
-
               <div className="border-t border-gray-800/80 my-1"></div>
 
-              {/* 7. Clear Conversation */}
+              {/* 6. Clear Conversation */}
               <button
                 onClick={() => {
                   setMenuOpen(false);
@@ -323,7 +299,7 @@ export const CompanionPanel: React.FC<CompanionPanelProps> = ({
                 <span>Clear Conversation</span>
               </button>
 
-              {/* 8. Log Out */}
+              {/* 7. Log Out */}
               <button
                 onClick={() => {
                   setMenuOpen(false);

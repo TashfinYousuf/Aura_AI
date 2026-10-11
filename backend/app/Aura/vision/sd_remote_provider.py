@@ -129,28 +129,40 @@ class RemoteStableDiffusionProvider:
         ])
         is_sheer = any(w in p_lower for w in ["sheer", "translucent", "see-through", "mesh"])
         is_lingerie = any(w in p_lower for w in ["lingerie", "lace", "bralette", "panties", "bra", "সিল্ক", "লেস"])
-
-        # 1. Highest Priority: Explicit Nude / Naked Contexts
-        if explicit_nude:
-            if "shower" in scene or any(w in p_lower for w in ["shower", "bath", "গোসল"]):
-                outfit = "completely naked, glistening wet porcelain skin with delicate water droplets tracing curves, damp dewy silky hair, steamy glass shower"
-                actual_scene = "shower"
-            elif any(w in p_lower for w in ["bed", "sleep", "sheet", "বিছানা", "pillow"]):
-                outfit = "completely naked and unclothed, lying sensual in soft rumpled silk bedsheets, bare shoulders, natural authentic curves, warm bedroom morning light"
-                actual_scene = "bed"
-            elif "topless" in p_lower:
-                outfit = "topless with bare dewy skin, wearing loose silk pajama bottoms on bed, natural authentic pose"
-                actual_scene = "bedroom"
-            else:
-                outfit = "completely naked, raw authentic skin texture with visible natural pores, candid intimate bedroom selfie, alluring natural pose"
-                actual_scene = "bedroom" if scene in ["desk", "cafe"] else scene
-
-        # 2. South Asian Ethnic & Saree Requests (High Priority User Intent)
         is_saree = any(w in p_lower for w in ["saree", "shari", "শাড়ি", "শাড়ি", "sharee", "anchol", "আঁচল"])
         is_lehenga = any(w in p_lower for w in ["lehenga", "লেহেঙ্গা", "choli"])
         is_ethnic = any(w in p_lower for w in ["salwar", "kameez", "kamiz", "kurti", "কামিজ", "সালোয়ার"])
 
-        if is_saree:
+        # 1. Highest Priority: Explicit Nude / Naked Contexts
+        if explicit_nude:
+            # Color recognition for bedding or environment (e.g. "nude pic dao na lavender")
+            sheet_color = "silk"
+            if "lavender" in p_lower:
+                sheet_color = "lavender silk"
+            elif any(w in p_lower for w in ["black", "কালো"]):
+                sheet_color = "black satin"
+            elif any(w in p_lower for w in ["red", "লাল"]):
+                sheet_color = "crimson red silk"
+            elif any(w in p_lower for w in ["white", "সাদা"]):
+                sheet_color = "pure white linen"
+            elif any(w in p_lower for w in ["pink", "গোলাপি"]):
+                sheet_color = "blush pink satin"
+
+            if "shower" in scene or any(w in p_lower for w in ["shower", "bath", "গোসল"]):
+                outfit = "completely naked and unclothed, glistening wet porcelain skin with delicate water droplets tracing curves, damp dewy silky hair, steamy glass shower"
+                actual_scene = "shower"
+            elif any(w in p_lower for w in ["bed", "sleep", "sheet", "বিছানা", "pillow"]) or scene in ["bed", "bedroom"]:
+                outfit = f"completely naked and unclothed, lying sensual in soft rumpled {sheet_color} bedsheets, bare shoulders, natural authentic curves, warm bedroom morning light"
+                actual_scene = "bed"
+            elif "topless" in p_lower:
+                outfit = f"topless with bare dewy skin, wearing loose {sheet_color} pajama bottoms on bed, natural authentic pose"
+                actual_scene = "bedroom"
+            else:
+                outfit = f"completely naked and unclothed, raw authentic skin texture with visible natural pores, candid intimate bedroom selfie with {sheet_color} accents, alluring natural pose"
+                actual_scene = "bedroom" if scene in ["desk", "cafe"] else scene
+
+        # 2. South Asian Ethnic & Saree Requests (High Priority User Intent)
+        elif is_saree:
             color = "crimson red and gold"
             if any(w in p_lower for w in ["black", "কালো"]):
                 color = "alluring translucent black"
@@ -162,6 +174,8 @@ class RemoteStableDiffusionProvider:
                 color = "emerald green and gold"
             elif any(w in p_lower for w in ["pink", "গোলাপি"]):
                 color = "delicate blush pink and silver"
+            elif "lavender" in p_lower:
+                color = "lavender purple and silver"
             outfit = f"wearing an exquisite {color} silk chiffon saree with ornate borders, matching blouse, elegant sensual drape"
             actual_scene = "bedroom" if scene in ["bed", "bedroom"] else ("living room" if scene in ["desk", "cafe"] else scene)
 
@@ -175,7 +189,8 @@ class RemoteStableDiffusionProvider:
 
         # 3. Sheer / Transparent Negligee
         elif is_sheer:
-            outfit = "wearing a sheer delicate see-through black mesh lace negligee, translucent fabric softly revealing silhouette"
+            sheer_col = "lavender" if "lavender" in p_lower else ("crimson red" if "red" in p_lower else "black")
+            outfit = f"wearing a sheer delicate see-through {sheer_col} mesh lace negligee, translucent fabric softly revealing silhouette"
             actual_scene = "bedroom"
 
         # 4. Specific Lingerie / Boudoir Requests
@@ -185,11 +200,16 @@ class RemoteStableDiffusionProvider:
         elif "black" in p_lower and is_lingerie:
             outfit = "wearing an ultra-luxurious black silk lace lingerie set with sheer accents"
             actual_scene = "bedroom"
+        elif "lavender" in p_lower and is_lingerie:
+            outfit = "wearing a delicate lavender purple silk lace lingerie set, elegant bedroom nightwear"
+            actual_scene = "bedroom"
         elif is_lingerie or scene == "boudoir":
-            outfit = "wearing an alluring seductive satin lace lingerie set, elegant bedroom nightwear"
+            lingerie_col = "lavender silk" if "lavender" in p_lower else "alluring seductive satin"
+            outfit = f"wearing a {lingerie_col} lace lingerie set, elegant bedroom nightwear"
             actual_scene = "bedroom"
         elif "bikini" in p_lower or "swimwear" in p_lower:
-            outfit = "wearing a stylish flattering beach bikini"
+            bikini_col = "lavender" if "lavender" in p_lower else "stylish flattering"
+            outfit = f"wearing a {bikini_col} beach bikini"
             actual_scene = "beach" if scene in ["desk", "cafe"] else scene
         elif "shower" in scene or any(w in p_lower for w in ["shower", "bath"]):
             outfit = "wrapped comfortably in a soft plush white bath towel, damp dewy hair"
@@ -200,7 +220,8 @@ class RemoteStableDiffusionProvider:
             outfit = "wearing tight flattering blue denim jeans and a fitted white crop top"
             actual_scene = "living room"
         elif scene == "evening" or any(w in p_lower for w in ["dress", "gown", "party"]):
-            outfit = "wearing an elegant form-fitting evening cocktail dress"
+            dress_col = "lavender" if "lavender" in p_lower else "evening cocktail"
+            outfit = f"wearing an elegant form-fitting {dress_col} dress"
             actual_scene = "evening"
         elif scene == "cafe" or any(w in p_lower for w in ["cafe", "coffee", "restaurant"]):
             outfit = "wearing a trendy casual knit sweater and top, sitting at cafe"

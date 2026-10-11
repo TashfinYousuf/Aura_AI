@@ -267,6 +267,8 @@ export const MessageList: React.FC<MessageListProps> = ({
               } ${
                 isActiveMatch ? "ring-2 ring-amber-400 ring-offset-2 ring-offset-gray-950 shadow-amber-500/20" : ""
               } ${
+                editingMsgIdx === idx ? "ring-2 ring-indigo-400 ring-offset-2 ring-offset-gray-950 shadow-indigo-500/40" : ""
+              } ${
                 isPinned ? "border-amber-500/40" : ""
               }`}
             >
@@ -381,35 +383,9 @@ export const MessageList: React.FC<MessageListProps> = ({
                 </div>
               ) : (
                 <div>
-                  {/* Inline Edit Form */}
-                  {editingMsgIdx === idx ? (
-                    <div className="flex flex-col gap-2 w-full mt-1">
-                      <textarea
-                        value={input}
-                        onChange={(e) => setInput(e.target.value)}
-                        className="bg-gray-950 text-white p-2.5 rounded-xl w-full text-sm border border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 resize-none min-h-16"
-                        autoFocus
-                      />
-                      <div className="flex gap-2 justify-end">
-                        <button
-                          onClick={() => { setEditingMsgIdx(null); setInput(""); }}
-                          className="text-xs bg-gray-700 hover:bg-gray-600 px-3 py-1.5 rounded-lg transition"
-                        >
-                          Cancel
-                        </button>
-                        <button
-                          onClick={() => submitEdit(idx, input)}
-                          className="text-xs bg-indigo-600 hover:bg-indigo-500 px-3 py-1.5 rounded-lg transition shadow-md font-medium"
-                        >
-                          Save Changes
-                        </button>
-                      </div>
-                    </div>
-                  ) : (
-                    <span className="whitespace-pre-wrap leading-relaxed text-sm select-text">
-                      {highlightMatches(msg.content, searchQuery)}
-                    </span>
-                  )}
+                  <span className="whitespace-pre-wrap leading-relaxed text-sm select-text">
+                    {highlightMatches(msg.content, searchQuery)}
+                  </span>
 
                   {/* Audio Synthesizer Player for Aura Voice */}
                   {msg.role !== "user" && msg.audioBase64 && (

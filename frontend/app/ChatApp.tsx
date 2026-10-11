@@ -751,6 +751,20 @@ export default function ChatApp({ currentUser }: { currentUser: User }) {
         isLoading={isLoading}
         replyingToMsg={replyingToMsg}
         setReplyingToMsg={setReplyingToMsg}
+        editingMsg={
+          editingMsgIdx !== null && messages[editingMsgIdx]
+            ? { id: messages[editingMsgIdx].id, content: messages[editingMsgIdx].content, idx: editingMsgIdx }
+            : null
+        }
+        onCancelEdit={() => {
+          setEditingMsgIdx(null);
+          setInput("");
+        }}
+        onSubmitEdit={(content) => {
+          if (editingMsgIdx !== null) {
+            submitEdit(editingMsgIdx, content);
+          }
+        }}
       />
 
       {/* Theme & Wallpaper Customizer Modal */}

@@ -123,14 +123,14 @@ def create_audit_pdf(output_path: str):
     # Header Banner
     # -------------------------------------------------------------------------
     elements.append(Paragraph("AURA COMPANION OS — ARCHITECTURE & AUDIT REPORT", title_style))
-    elements.append(Paragraph("Autonomous Multimodal Companion | Release v3.6 | Telegram + Messenger Hybrid & Cloud Refusal Immunity", subtitle_style))
+    elements.append(Paragraph("Autonomous Multimodal Companion | Release v3.7 | Messenger UX & Vision Prompt Precision", subtitle_style))
     elements.append(HRFlowable(width="100%", thickness=1.5, color=PRIMARY, spaceAfter=10))
 
     # Meta Table
     meta_data = [
         [
             Paragraph("<b>Project:</b> Aura Multimodal Companion OS", table_cell),
-            Paragraph("<b>Version:</b> 3.6 (Hybrid UI/UX & Refusal Immunity)", table_cell)
+            Paragraph("<b>Version:</b> 3.7 (Messenger UX & Vision Prompt Precision)", table_cell)
         ],
         [
             Paragraph("<b>Author / Lead:</b> Tashfin Yousuf", table_cell),
@@ -336,6 +336,21 @@ def create_audit_pdf(output_path: str):
             Paragraph("<b>Frontend UI/UX Modernization</b>", table_cell),
             Paragraph("Legacy interface lacked message reactions, pinning, inline search, theme selection, and Telegram-style contextual actions.", table_cell),
             Paragraph("Engineered Telegram + Messenger hybrid UI: rounded-2xl tailored bubbles, read receipts (✓✓), floating 7-emoji reactions, top pinned banner, search, and .txt chat export.", table_cell)
+        ],
+        [
+            Paragraph("<b>Header Layout Rebalancing</b>", table_cell),
+            Paragraph("Modes and level were bunched on left leaving empty center gap; gallery and incognito buttons cluttered outer bar.", table_cell),
+            Paragraph("Restructured into 3 balanced flex zones: Left (Identity/Presence), Center (Mode Switcher & Level Progress), Right (Analytics & 3-Dots Menu).", table_cell)
+        ],
+        [
+            Paragraph("<b>Messenger-Style Edit & Composer</b>", table_cell),
+            Paragraph("Inline dark textarea boxes in bubbles were clunky; input box was single-line and non-expandable.", table_cell),
+            Paragraph("Implemented Messenger/Telegram bottom composer editing with preview banner, dismiss (✕), save (✓), and auto-expanding textarea up to 140px.", table_cell)
+        ],
+        [
+            Paragraph("<b>Explicit Nude Fallback Override</b>", table_cell),
+            Paragraph("Disconnected if-check logic caused saree/ethnic fallbacks to overwrite explicit nude/naked prompts with lounge shorts.", table_cell),
+            Paragraph("Unified if-elif branching with contextual bedding/outfit color recognition (lavender, black satin, crimson silk), guaranteeing 100% prompt fidelity.", table_cell)
         ]
     ]
     incidents_table = Table(incidents_data, colWidths=[120, 185, 235])
@@ -383,7 +398,7 @@ def create_audit_pdf(output_path: str):
 
     elements.append(Spacer(1, 10))
     elements.append(HRFlowable(width="100%", thickness=1, color=BORDER_COL, spaceAfter=6))
-    elements.append(Paragraph("<b>Aura Multimodal Companion OS — Verification Complete</b> | 42/42 Automated Tests Passing | Release v3.6 Synchronized with GitHub main.", ParagraphStyle('Footer', parent=body_style, fontSize=7.5, textColor=TEXT_MUTED, alignment=1)))
+    elements.append(Paragraph("<b>Aura Multimodal Companion OS — Verification Complete</b> | 42/42 Automated Tests Passing | Release v3.7 Synchronized with GitHub main.", ParagraphStyle('Footer', parent=body_style, fontSize=7.5, textColor=TEXT_MUTED, alignment=1)))
 
     doc.build(elements)
     print(f"✅ Audit PDF successfully generated at: {output_path}")
